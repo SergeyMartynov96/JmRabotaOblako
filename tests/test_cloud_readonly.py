@@ -28,6 +28,9 @@ class ReadOnlyChecks(unittest.TestCase):
         self.assertIsNone(match("ИП Сиразединов", ["Сиразетдинов", "Сиразединова"]))
         self.assertEqual(match("ИП Мамадалиев Мухаммадали Арипович", ["Мамадалиев", "Маматулин"]), 0)
         self.assertIsNone(match("ИП Мамадалиев", ["Маматулин"]))
+        self.assertEqual(match("ИП Сиразединов", ["ИП Сиразетдинов Артур Феликсович"]), 0)
+        self.assertEqual(match("ИП Фирсова Наталья Александровна", ["ИП Фирсова Н. А."]), 0)
+        self.assertIsNone(match("ИП Фирсова", ["Фирсова Наталья", "Фирсова Анна"]))
 
     def test_slot_and_department_filter(self):
         def row(ident, time, department="Нужный филиал"):
