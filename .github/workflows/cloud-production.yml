@@ -1,6 +1,11 @@
 name: LifeMart production pass
-run-name: LifeMart ${{ inputs.operation }} (${{ inputs.slots }})
+run-name: LifeMart ${{ github.event_name == 'schedule' && 'daily apply' || inputs.operation }} (${{ github.event.schedule || inputs.slots }})
 on:
+  schedule:
+    # Asia/Yekaterinburg is UTC+5 throughout the year.
+    - cron: '30 3 * * *'  # 08:30 -> 09:00,10:00
+    - cron: '30 5 * * *'  # 10:30 -> 11:00,12:00,13:00
+    - cron: '0 9 * * *'   # 14:00 -> 15:00,16:00
   workflow_dispatch:
     inputs:
       operation:
@@ -24,13 +29,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      REQUEST_SLOTS: ${{ inputs.slots }}
       LIFEMART_LOGIN: ${{ secrets.LIFEMART_LOGIN }}
       LIFEMART_PASSWORD: ${{ secrets.LIFEMART_PASSWORD }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+      - name: Resolve sending window
+        id: window
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+          INPUT_OPERATION: ${{ inputs.operation }}
+          INPUT_SLOTS: ${{ inputs.slots }}
+        run: python3 scripts/cloud_schedule.py
       - name: Verify safety, allocation and matching
         run: python3 -m unittest discover -s tests -v
       - name: Install pinned browser runtime
@@ -47,9 +59,13 @@ jobs:
             gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name "$artifact_name" --dir "/tmp/lifemart-history/$run_id"
           done < /tmp/lifemart-artifacts.tsv
       - name: Read-only complete preflight
+        env:
+          REQUEST_SLOTS: ${{ steps.window.outputs.slots }}
+          LIFEMART_DEADLINE: ${{ steps.window.outputs.deadline }}
+          LIFEMART_ALLOW_EMPTY: ${{ steps.window.outputs.allow_empty }}
         run: python3 scripts/cloud_production.py prepare --slots "$REQUEST_SLOTS"
       - name: Persist fingerprints before any save
-        if: inputs.operation == 'apply'
+        if: steps.window.outputs.operation == 'apply'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: lifemart-journal-${{ github.run_id }}
@@ -57,9 +73,10 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Save and verify requests and facts
-        if: inputs.operation == 'apply'
+        if: steps.window.outputs.operation == 'apply'
         env:
           LIFEMART_JOURNAL_PERSISTED: 'true'
+          LIFEMART_DEADLINE: ${{ steps.window.outputs.deadline }}
         run: python3 scripts/cloud_production.py apply
       - name: Remove private working plan
         if: always()
