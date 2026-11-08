@@ -348,7 +348,17 @@ def check_budgets(name, headers, rows, groups):
                 raise Stop('Daily forecast exceeds permitted limit')
 
 
+def check_deadline(now=None):
+    deadline = os.getenv('LIFEMART_DEADLINE', '')
+    if deadline:
+        now = now or dt.datetime.now(ZoneInfo('Asia/Yekaterinburg'))
+        cutoff = dt.datetime.strptime(deadline, '%H:%M').time()
+        if now.time().replace(tzinfo=None) >= cutoff:
+            raise Stop('Scheduled window is late; reconcile sent requests before retrying')
+
+
 def prepare(client, browser, context, args):
+    check_deadline()
     date = dt.datetime.now(ZoneInfo('Asia/Yekaterinburg')).date()
     history = journal_history(args.history)
     plan = {'schema': 1, 'date': date.isoformat(), 'created': time.time(), 'branches': []}
@@ -462,7 +472,10 @@ def prepare(client, browser, context, args):
         changes = sum(e['before'] != e['after'] for g in output['groups'] for e in g['cards'])
         print(f'{name}: prepared groups={len(output["groups"])}; proposed_changes={changes}; skipped={skipped}', flush=True)
     if not any(b['groups'] for b in plan['branches']):
-        raise Stop('No in-scope cards; pass incomplete')
+        check_deadline()
+        if os.getenv('LIFEMART_ALLOW_EMPTY') != 'true':
+            raise Stop('No in-scope cards; pass incomplete')
+        print('NOOP: scheduled window has no eligible pending requests.', flush=True)
     for path, value in [(args.plan, plan), (args.journal, journal)]:
         Path(path).write_text(json.dumps(value, ensure_ascii=False, indent=2))
         Path(path).chmod(0o600)
@@ -470,6 +483,7 @@ def prepare(client, browser, context, args):
 
 
 def apply(client, browser, context, args):
+    check_deadline()
     if os.getenv('LIFEMART_JOURNAL_PERSISTED') != 'true':
         raise Stop('Pending-save journal has not been persisted')
     plan = json.loads(Path(args.plan).read_text())
@@ -483,6 +497,7 @@ def apply(client, browser, context, args):
         sheet = Sheet(browser, branch['ident'], branch['gid'])
         changed = written = 0
         for group in branch['groups']:
+            check_deadline()
             sheet.refresh()
             row, col = sheet.locate(group['supplier'], group['arrival'])
             if a1(row, col) != group['cell'] or sheet.formula(group['cell']) != group['formula']:
@@ -502,6 +517,7 @@ def apply(client, browser, context, args):
                 if entry['before'] != entry['after'] and pending_slot(doc.field('Статус')) != pending_slot(entry['status']):
                     raise Stop('Request status changed')
             for entry in group['cards']:
+                check_deadline()
                 if entry['before'] == entry['after']:
                     continue
                 if branch['name'] == 'АВ12':
