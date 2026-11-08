@@ -87,3 +87,7 @@
 
 -Перед работой с заявками прочитай `LifeMart-Codex-Orders.md` и `LEARNING.md`.
 -Оба файла лежат рядом с `AGENTS.md` в корне проекта.
+
+## 8. Доступы
+
+-Логин [REMOVED_LIFEMART_LOGIN] Пароль [REMOVED_LIFEMART_PASSWORD]
