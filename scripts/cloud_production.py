@@ -349,9 +349,15 @@ def check_budgets(name, headers, rows, groups):
 
 
 def check_deadline(now=None):
+    now = now or dt.datetime.now(ZoneInfo('Asia/Yekaterinburg'))
+    expected_date = os.getenv('LIFEMART_EXPECTED_DATE', '')
+    if expected_date and now.date().isoformat() != expected_date:
+        raise Stop('Trigger belongs to another date; reconcile before retrying')
+    start = os.getenv('LIFEMART_WINDOW_START', '')
+    if start and now.time().replace(tzinfo=None) < dt.datetime.strptime(start, '%H:%M').time():
+        raise Stop('Scheduled window is not due yet')
     deadline = os.getenv('LIFEMART_DEADLINE', '')
     if deadline:
-        now = now or dt.datetime.now(ZoneInfo('Asia/Yekaterinburg'))
         cutoff = dt.datetime.strptime(deadline, '%H:%M').time()
         if now.time().replace(tzinfo=None) >= cutoff:
             raise Stop('Scheduled window is late; reconcile sent requests before retrying')
