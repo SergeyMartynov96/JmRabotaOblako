@@ -11,7 +11,7 @@ on:
       operation:
         description: Preview first; apply saves requests and facts
         type: choice
-        options: [preview, apply, verify]
+        options: [preview, apply, verify, monitor-verify]
         default: preview
         required: true
       slots:
@@ -61,13 +61,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           WINDOW_KEY: ${{ steps.window.outputs.window_key }}
         run: python3 scripts/cloud_window_state.py check
+      - name: Verify independent monitor delivery
+        if: steps.window.outputs.operation == 'monitor-verify'
+        env:
+          CRONITOR_TELEMETRY_KEY: ${{ secrets.CRONITOR_TELEMETRY_KEY }}
+        run: python3 scripts/cloud_heartbeat.py --verify
       - name: Install pinned browser runtime
-        if: steps.window.outputs.operation != 'verify' && steps.completed.outputs.complete != 'true'
+        if: steps.window.outputs.operation != 'verify' && steps.window.outputs.operation != 'monitor-verify' && steps.completed.outputs.complete != 'true'
         run: |
           python3 -m pip install playwright==1.62.0
           python3 -m playwright install --with-deps chromium
       - name: Restore pending-save fingerprints
-        if: steps.window.outputs.operation != 'verify' && steps.completed.outputs.complete != 'true'
+        if: steps.window.outputs.operation != 'verify' && steps.window.outputs.operation != 'monitor-verify' && steps.completed.outputs.complete != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -77,7 +82,7 @@ jobs:
             gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name "$artifact_name" --dir "/tmp/lifemart-history/$run_id"
           done < /tmp/lifemart-artifacts.tsv
       - name: Read-only complete preflight
-        if: steps.window.outputs.operation != 'verify' && steps.completed.outputs.complete != 'true'
+        if: steps.window.outputs.operation != 'verify' && steps.window.outputs.operation != 'monitor-verify' && steps.completed.outputs.complete != 'true'
         env:
           REQUEST_SLOTS: ${{ steps.window.outputs.slots }}
           LIFEMART_DEADLINE: ${{ steps.window.outputs.deadline }}
@@ -119,6 +124,7 @@ jobs:
         continue-on-error: true
         env:
           WINDOW: ${{ steps.window.outputs.window }}
+          CRONITOR_TELEMETRY_KEY: ${{ secrets.CRONITOR_TELEMETRY_KEY }}
           HEALTHCHECK_MORNING: ${{ secrets.HEALTHCHECK_MORNING }}
           HEALTHCHECK_MIDDAY: ${{ secrets.HEALTHCHECK_MIDDAY }}
           HEALTHCHECK_AFTERNOON: ${{ secrets.HEALTHCHECK_AFTERNOON }}

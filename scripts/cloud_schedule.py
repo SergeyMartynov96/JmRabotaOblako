@@ -20,7 +20,7 @@ def resolve(event, schedule='', operation='preview', slots='15:00,16:00',
         key = next((k for k, v in WINDOW_CONFIG.items() if v['cron'] == schedule), None)
         if key is None:
             raise ValueError('Unknown scheduled window')
-    elif event != 'workflow_dispatch' or operation not in ('preview', 'apply', 'verify'):
+    elif event != 'workflow_dispatch' or operation not in ('preview', 'apply', 'verify', 'monitor-verify'):
         raise ValueError('Unsupported event or operation')
     elif external_window != 'none':
         if external_window not in WINDOW_CONFIG or operation != 'apply':
