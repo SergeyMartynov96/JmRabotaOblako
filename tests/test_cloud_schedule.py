@@ -16,8 +16,8 @@ class DailyScheduleChecks(unittest.TestCase):
             ('30 5 * * *', '10:30', '11:00,12:00,13:00', '11:00'),
             ('0 9 * * *', '14:00', '15:00,16:00', '15:00'),
         ]:
-            config = schedule.resolve('schedule', cron)
-            self.assertEqual(config, dict(operation='apply', slots=slots, deadline=deadline, allow_empty='true'))
+            config = schedule.resolve('schedule', cron, requested_at='2026-11-09T00:00:00Z')
+            self.assertEqual({k:config[k] for k in ('operation','slots','deadline','allow_empty')}, dict(operation='apply', slots=slots, deadline=deadline, allow_empty='true'))
             minute, hour, *_ = cron.split()
             self.assertEqual(f'{(int(hour) + 5) % 24:02d}:{int(minute):02d}', local)
 

@@ -1,5 +1,5 @@
 name: LifeMart production pass
-run-name: LifeMart ${{ github.event_name == 'schedule' && 'daily apply' || inputs.operation }} (${{ github.event.schedule || inputs.slots }})
+run-name: LifeMart ${{ github.event_name == 'schedule' && 'daily apply' || inputs.operation }} (${{ inputs.external_window != 'none' && inputs.external_window || github.event.schedule || inputs.slots }})
 on:
   schedule:
     # Asia/Yekaterinburg is UTC+5 throughout the year.
@@ -11,12 +11,18 @@ on:
       operation:
         description: Preview first; apply saves requests and facts
         type: choice
-        options: [preview, apply]
+        options: [preview, apply, verify]
         default: preview
         required: true
       slots:
         description: Sending slots in Asia/Yekaterinburg
         default: '15:00,16:00'
+        required: true
+      external_window:
+        description: External scheduler window; none preserves ordinary manual mode
+        type: choice
+        options: [none, morning, midday, afternoon]
+        default: none
         required: true
 permissions:
   contents: read
@@ -42,14 +48,26 @@ jobs:
           EVENT_SCHEDULE: ${{ github.event.schedule }}
           INPUT_OPERATION: ${{ inputs.operation }}
           INPUT_SLOTS: ${{ inputs.slots }}
-        run: python3 scripts/cloud_schedule.py
+          INPUT_EXTERNAL_WINDOW: ${{ inputs.external_window }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > /tmp/lifemart-run.json
+          python3 scripts/cloud_schedule.py
       - name: Verify safety, allocation and matching
         run: python3 -m unittest discover -s tests -v
+      - name: Check completed sending window
+        id: completed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WINDOW_KEY: ${{ steps.window.outputs.window_key }}
+        run: python3 scripts/cloud_window_state.py check
       - name: Install pinned browser runtime
+        if: steps.window.outputs.operation != 'verify' && steps.completed.outputs.complete != 'true'
         run: |
           python3 -m pip install playwright==1.62.0
           python3 -m playwright install --with-deps chromium
       - name: Restore pending-save fingerprints
+        if: steps.window.outputs.operation != 'verify' && steps.completed.outputs.complete != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -59,13 +77,16 @@ jobs:
             gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name "$artifact_name" --dir "/tmp/lifemart-history/$run_id"
           done < /tmp/lifemart-artifacts.tsv
       - name: Read-only complete preflight
+        if: steps.window.outputs.operation != 'verify' && steps.completed.outputs.complete != 'true'
         env:
           REQUEST_SLOTS: ${{ steps.window.outputs.slots }}
           LIFEMART_DEADLINE: ${{ steps.window.outputs.deadline }}
+          LIFEMART_WINDOW_START: ${{ steps.window.outputs.start }}
+          LIFEMART_EXPECTED_DATE: ${{ steps.window.outputs.expected_date }}
           LIFEMART_ALLOW_EMPTY: ${{ steps.window.outputs.allow_empty }}
         run: python3 scripts/cloud_production.py prepare --slots "$REQUEST_SLOTS"
       - name: Persist fingerprints before any save
-        if: steps.window.outputs.operation == 'apply'
+        if: steps.window.outputs.operation == 'apply' && steps.completed.outputs.complete != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: lifemart-journal-${{ github.run_id }}
@@ -73,11 +94,35 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Save and verify requests and facts
-        if: steps.window.outputs.operation == 'apply'
+        if: steps.window.outputs.operation == 'apply' && steps.completed.outputs.complete != 'true'
         env:
           LIFEMART_JOURNAL_PERSISTED: 'true'
           LIFEMART_DEADLINE: ${{ steps.window.outputs.deadline }}
+          LIFEMART_WINDOW_START: ${{ steps.window.outputs.start }}
+          LIFEMART_EXPECTED_DATE: ${{ steps.window.outputs.expected_date }}
         run: python3 scripts/cloud_production.py apply
+      - name: Write successful window receipt
+        if: steps.window.outputs.operation == 'apply' && steps.window.outputs.window_key != '' && steps.completed.outputs.complete != 'true'
+        env:
+          WINDOW_KEY: ${{ steps.window.outputs.window_key }}
+        run: python3 scripts/cloud_window_state.py write
+      - name: Persist successful window receipt
+        if: steps.window.outputs.operation == 'apply' && steps.window.outputs.window_key != '' && steps.completed.outputs.complete != 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: lifemart-complete-${{ steps.window.outputs.window_key }}
+          path: /tmp/lifemart-complete.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Confirm window to independent monitor
+        if: steps.window.outputs.operation == 'apply' && steps.window.outputs.window_key != ''
+        continue-on-error: true
+        env:
+          WINDOW: ${{ steps.window.outputs.window }}
+          HEALTHCHECK_MORNING: ${{ secrets.HEALTHCHECK_MORNING }}
+          HEALTHCHECK_MIDDAY: ${{ secrets.HEALTHCHECK_MIDDAY }}
+          HEALTHCHECK_AFTERNOON: ${{ secrets.HEALTHCHECK_AFTERNOON }}
+        run: python3 scripts/cloud_heartbeat.py
       - name: Remove private working plan
         if: always()
         run: rm -f /tmp/lifemart-plan.json
