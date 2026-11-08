@@ -56,6 +56,29 @@ class ProductionChecks(unittest.TestCase):
         self.assertEqual(len(m.tops('Г34')), 50)
         self.assertTrue(m.is_top('Паста Карбонара (СПТ) 250 г', m.tops('М42')))
 
+    def test_pending_status_ignores_display_timezone_but_detects_sent(self):
+        self.assertEqual(m.pending_slot('Ожидает отправки (16:00) +5 GMT'), '16:00')
+        self.assertEqual(m.pending_slot('Ожидает отправки (16:00) История'), '16:00')
+        self.assertIsNone(m.pending_slot('Отправлено'))
+
+    def test_daily_budget_is_independent_of_broken_total_cell(self):
+        headers = ['День', 'Дата', 'Поставщик', 'СУММА ГОТОВАЯ+ЯПОНИЯ', 'план']
+        rows = [['Лимит, пн–сб, ₽', '', '60000'], ['вт', '10.11.2026', '60001', '1', '']]
+        groups = [dict(arrival='10.11.2026', cell='C2', expected='60001')]
+        with self.assertRaises(m.Stop):
+            m.check_budgets('Г34', headers, rows, groups)
+        groups[0]['expected'] = '60000'
+        m.check_budgets('Г34', headers, rows, groups)
+        rows[1][4] = '59000'
+        with self.assertRaises(m.Stop):
+            m.check_budgets('Г34', headers, rows, groups)
+        rows = [['Лимит, будни, ₽', '', '70000'], ['вт', '10.11.2026', '71065', '1', '']]
+        groups[0]['expected'] = '71065'
+        m.check_budgets('М42', headers, rows, groups)
+        groups[0]['expected'] = '72001'
+        with self.assertRaises(m.Stop):
+            m.check_budgets('М42', headers, rows, groups)
+
     def test_a1_beyond_z(self):
         self.assertEqual(m.a1(9, 26), 'AA10')
 

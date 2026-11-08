@@ -316,6 +316,38 @@ def journal_history(directory):
     return entries
 
 
+def pending_slot(status):
+    match = re.search(r'Ожидает отправки\s*\((\d{2}:\d{2})\)', status)
+    return match.group(1) if match else None
+
+
+def check_budgets(name, headers, rows, groups):
+    if name in ('М42', 'Г34'):
+        top_end = next((i for i, h in enumerate(headers) if 'готовая' in h.casefold()), None)
+        if top_end is None:
+            raise Stop('Daily supplier block missing')
+        for arrival in {g['arrival'] for g in groups}:
+            row = next(r for r in rows if len(r) > 1 and r[1] == arrival)
+            forecast = D(0)
+            for col in range(2, top_end):
+                gs = [g for g in groups if g['arrival'] == arrival and g['cell'] == a1(rows.index(row), col)]
+                value = gs[0]['expected'] if gs else (row[col] if col < len(row) else '')
+                if value.strip() not in ('', '-', '–', '—'):
+                    forecast += ro.number(value)
+            weekday = dt.datetime.strptime(arrival, '%d.%m.%Y').weekday()
+            label = 'Лимит, воскресенье' if weekday == 6 else 'Лимит, суббота' if weekday == 5 else ('Лимит, пн–сб' if name == 'Г34' else 'Лимит, будни')
+            limits = [ro.number(r[2]) for r in rows if r and r[0].startswith(label)]
+            if len(limits) != 1:
+                raise Stop('Daily limit ambiguous')
+            # Regulation §6 permits 71–72k for M42's 70k soft target.
+            # G34's 60k ceiling remains strict.
+            limit = min(limits[0], D(60000)) if name == 'Г34' else limits[0] + D(2000)
+            if name == 'Г34' and len(row) > top_end + 1 and headers[top_end + 1].casefold() == 'план' and row[top_end + 1].strip():
+                limit = min(limit, ro.number(row[top_end + 1]))
+            if forecast > limit:
+                raise Stop('Daily forecast exceeds permitted limit')
+
+
 def prepare(client, browser, context, args):
     date = dt.datetime.now(ZoneInfo('Asia/Yekaterinburg')).date()
     history = journal_history(args.history)
@@ -423,31 +455,7 @@ def prepare(client, browser, context, args):
                 if entry['after'] != entry['before']:
                     journal['entries'][digest(entry['id'])] = {'before': entry['before'], 'after': entry['after']}
             output['groups'].append(group)
-        # Forecast includes the other supplier cells in the existing daily block.
-        if name in ('М42', 'Г34'):
-            top_end = next((i for i, h in enumerate(sheet.headers) if 'готовая' in h.casefold()), None)
-            if top_end is None:
-                raise Stop('Daily supplier block missing')
-            for arrival in {g['arrival'] for g in output['groups']}:
-                row = next(r for r in sheet.rows if len(r) > 1 and r[1] == arrival)
-                forecast = D(0)
-                for col in range(2, top_end):
-                    gs = [g for g in output['groups'] if g['arrival'] == arrival and g['cell'] == a1(sheet.rows.index(row), col)]
-                    value = gs[0]['expected'] if gs else (row[col] if col < len(row) else '')
-                    if value.strip() not in ('', '-', '–', '—'):
-                        forecast += ro.number(value)
-                weekday = dt.datetime.strptime(arrival, '%d.%m.%Y').weekday()
-                label = 'Лимит, воскресенье' if weekday == 6 else 'Лимит, суббота' if weekday == 5 else ('Лимит, пн–сб' if name == 'Г34' else 'Лимит, будни')
-                limits = [ro.number(r[2]) for r in sheet.rows if r and r[0].startswith(label)]
-                if len(limits) != 1:
-                    raise Stop('Daily limit ambiguous')
-                # Regulation §6 permits 71–72k for M42's 70k soft target.
-                # G34's 60k ceiling remains strict.
-                limit = min(limits[0], D(60000)) if name == 'Г34' else limits[0] + D(2000)
-                if name == 'Г34' and len(row) > top_end + 1 and sheet.headers[top_end + 1].casefold() == 'план' and row[top_end + 1].strip():
-                    limit = min(limit, ro.number(row[top_end + 1]))
-                if forecast > limit:
-                    raise Stop('Daily forecast exceeds permitted limit')
+        check_budgets(name, sheet.headers, sheet.rows, output['groups'])
         sheet.page.close()
         plan['branches'].append(output)
         print(f'{name}: prepared groups={len(output["groups"])}; skipped={skipped}', flush=True)
@@ -477,6 +485,9 @@ def apply(client, browser, context, args):
             row, col = sheet.locate(group['supplier'], group['arrival'])
             if a1(row, col) != group['cell'] or sheet.formula(group['cell']) != group['formula']:
                 raise Stop('Sheet changed since preflight')
+            if group['plan'] is not None and ro.number(sheet.rows[row][col]) != D(group['plan']):
+                raise Stop('Calculated supplier plan changed since preflight')
+            check_budgets(branch['name'], sheet.headers, sheet.rows, branch['groups'])
             related = report(client, branch['department'], title, group['arrival'], arrival=True)
             ids = {x['id'] for x in related if ro.normalize(x['supplier']) == ro.normalize(group['supplier'])}
             if ids != {x['id'] for x in group['cards']}:
@@ -486,7 +497,7 @@ def apply(client, browser, context, args):
                 doc = card(client, entry['id'], title, entry['supplier'], group['arrival'])
                 if fingerprint(doc.items) != entry['before']:
                     raise Stop('Card changed since preflight')
-                if entry['before'] != entry['after'] and doc.field('Статус').split('История')[0].strip() != entry['status']:
+                if entry['before'] != entry['after'] and pending_slot(doc.field('Статус')) != pending_slot(entry['status']):
                     raise Stop('Request status changed')
             for entry in group['cards']:
                 if entry['before'] == entry['after']:
