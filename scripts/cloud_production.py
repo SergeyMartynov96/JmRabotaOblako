@@ -379,18 +379,19 @@ def prepare(client, browser, context, args):
         groups = {}
         selected_ids = {x['id'] for x in selected}
         for entry in selected:
-            key = (entry['supplier'], entry['arrival'])
+            key = (ro.supplier_column(entry['supplier'], sheet.headers), entry['arrival'])
             groups.setdefault(key, []).append(entry)
         output = {'name': name, 'department': dep, 'title': title, 'ident': ident,
                   'gid': gid, 'groups': [], 'skipped': skipped}
-        for (supplier, arrival), picked in groups.items():
+        for (supplier_col, arrival), picked in groups.items():
+            supplier = picked[0]['supplier']
             complete = report(client, dep, title, arrival, arrival=True)
-            related = [x for x in complete if ro.normalize(x['supplier']) == ro.normalize(supplier)]
+            related = [x for x in complete if ro.supplier_column(x['supplier'], sheet.headers) == supplier_col]
             if not {x['id'] for x in picked} <= {x['id'] for x in related}:
                 raise Stop('Arrival report incomplete')
             cards = []
             for entry in related:
-                doc = card(client, entry['id'], title, supplier, arrival)
+                doc = card(client, entry['id'], title, entry['supplier'], arrival)
                 entry.update(items=doc.items, arrival=arrival, before=fingerprint(doc.items))
                 cards.append(entry)
             current = sum((total(x['items']) for x in cards), D(0))
@@ -458,7 +459,8 @@ def prepare(client, browser, context, args):
         check_budgets(name, sheet.headers, sheet.rows, output['groups'])
         sheet.page.close()
         plan['branches'].append(output)
-        print(f'{name}: prepared groups={len(output["groups"])}; skipped={skipped}', flush=True)
+        changes = sum(e['before'] != e['after'] for g in output['groups'] for e in g['cards'])
+        print(f'{name}: prepared groups={len(output["groups"])}; proposed_changes={changes}; skipped={skipped}', flush=True)
     if not any(b['groups'] for b in plan['branches']):
         raise Stop('No in-scope cards; pass incomplete')
     for path, value in [(args.plan, plan), (args.journal, journal)]:
@@ -489,7 +491,7 @@ def apply(client, browser, context, args):
                 raise Stop('Calculated supplier plan changed since preflight')
             check_budgets(branch['name'], sheet.headers, sheet.rows, branch['groups'])
             related = report(client, branch['department'], title, group['arrival'], arrival=True)
-            ids = {x['id'] for x in related if ro.normalize(x['supplier']) == ro.normalize(group['supplier'])}
+            ids = {x['id'] for x in related if ro.supplier_column(x['supplier'], sheet.headers) == col}
             if ids != {x['id'] for x in group['cards']}:
                 raise Stop('Request group changed since preflight')
             # Read every card before the first write for this supplier.

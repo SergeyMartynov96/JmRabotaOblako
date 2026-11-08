@@ -86,7 +86,7 @@ def supplier_column(supplier, headers):
         name = normalize(header)
         if len(name) < 4 or name in {"дата", "план", "остаток", "день недели"}:
             continue
-        if supplier == name or supplier.startswith(name + " "):
+        if supplier == name or supplier.startswith(name + " ") or name.startswith(supplier + " "):
             matches.append(index)
     if matches:
         return matches[0] if len(matches) == 1 else None
@@ -110,7 +110,10 @@ def supplier_column(supplier, headers):
         if not words or len(surname) < 6 or len(words[0]) < 6:
             continue
         # A close surname is insufficient when the sheet gives a full name.
-        if len(words) > 1 and supplier.split()[1:] != words[1:]:
+        given = supplier.split()[1:]
+        if any(a != b and not (len(a) == 1 and b.startswith(a))
+               and not (len(b) == 1 and a.startswith(b))
+               for a, b in zip(given, words[1:])):
             continue
         if distance(surname, surname_key(words[0])) <= 1:
             candidates.append(index)
