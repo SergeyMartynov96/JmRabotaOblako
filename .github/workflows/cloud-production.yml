@@ -58,6 +58,8 @@ jobs:
           retention-days: 90
       - name: Save and verify requests and facts
         if: inputs.operation == 'apply'
+        env:
+          LIFEMART_JOURNAL_PERSISTED: 'true'
         run: python3 scripts/cloud_production.py apply
       - name: Remove private working plan
         if: always()

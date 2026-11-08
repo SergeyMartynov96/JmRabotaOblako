@@ -244,14 +244,37 @@ class Sheet:
 
 
 def form_items(page):
-    return page.locator('tr.nomenclature-row').evaluate_all('''rows => rows.map(row => {
+    items = page.locator('tr.nomenclature-row').evaluate_all('''rows => rows.map(row => {
       const q = row.querySelector('input.quantity');
       const value = suffix => row.querySelector('input[name$="[' + suffix + ']"]')?.value;
       return {id:value('id_supply'), name:row.querySelector('td a')?.textContent.trim(),
-        quantity:q?.value, price:value('price'), packing:q?.dataset.packing,
+        quantity:q?.value, submittedQuantity:value('quantity'), price:value('price'), packing:q?.dataset.packing,
         restricted:q?.dataset.hasEditRestrictions === '1', minimum:q?.dataset.min_value,
         fraction:q?.dataset.allow_fraction};
     })''')
+    if any(D(x['quantity']) != D(x['submittedQuantity']) for x in items):
+        raise Stop('Visible and submitted quantities differ')
+    return items
+
+
+def fill_quantities(page, desired):
+    items = form_items(page)
+    wanted = {x['id']: x for x in desired}
+    if set(wanted) != {x['id'] for x in items}:
+        raise Stop('Form assortment changed')
+    rows = page.locator('tr.nomenclature-row')
+    for index, item in enumerate(items):
+        q = wanted[item['id']]['quantity']
+        if D(q) != D(item['quantity']):
+            field = rows.nth(index).locator('input.quantity')
+            field.fill(q + '0' if '.' in q else q + '.0')
+            field.press('End')
+            field.press('Backspace')
+            field.press('Tab')
+    if fingerprint(form_items(page)) != fingerprint(desired):
+        raise Stop('Browser quantity events did not apply')
+    if ro.number(page.locator('.total_price').inner_text()) != total(desired):
+        raise Stop('Browser displayed total differs from proposed total')
 
 
 def sync_cookies(client, context):
@@ -388,6 +411,12 @@ def prepare(client, browser, context, args):
                         raise Stop('Supplier minimum would be violated')
                     entry['desired'] = desired
                     entry['after'] = fingerprint(desired)
+                    if entry['after'] != entry['before']:
+                        preview, fresh, _ = open_form(context, client, entry, title)
+                        if fingerprint(fresh) != entry['before']:
+                            raise Stop('Form changed during preflight')
+                        fill_quantities(preview, desired)
+                        preview.close()
             expected = sum((total(e.get('desired', e['items'])) for e in cards), D(0))
             group.update(expected=str(expected), rounded=str(expected.quantize(D('1'), rounding=ro.ROUND_HALF_UP)))
             for entry in cards:
@@ -412,7 +441,9 @@ def prepare(client, browser, context, args):
                 limits = [ro.number(r[2]) for r in sheet.rows if r and r[0].startswith(label)]
                 if len(limits) != 1:
                     raise Stop('Daily limit ambiguous')
-                limit = min(limits[0], D(60000)) if name == 'Г34' else limits[0] + D(1000)
+                # Regulation §6 permits 71–72k for M42's 70k soft target.
+                # G34's 60k ceiling remains strict.
+                limit = min(limits[0], D(60000)) if name == 'Г34' else limits[0] + D(2000)
                 if name == 'Г34' and len(row) > top_end + 1 and sheet.headers[top_end + 1].casefold() == 'план' and row[top_end + 1].strip():
                     limit = min(limit, ro.number(row[top_end + 1]))
                 if forecast > limit:
@@ -429,6 +460,8 @@ def prepare(client, browser, context, args):
 
 
 def apply(client, browser, context, args):
+    if os.getenv('LIFEMART_JOURNAL_PERSISTED') != 'true':
+        raise Stop('Pending-save journal has not been persisted')
     plan = json.loads(Path(args.plan).read_text())
     if plan.get('schema') != 1 or time.time() - plan['created'] > 600:
         raise Stop('Plan expired; prepare again')
@@ -463,16 +496,7 @@ def apply(client, browser, context, args):
                 page, items, minimum = open_form(context, client, entry, title)
                 if fingerprint(items) != entry['before']:
                     raise Stop('Form changed since preflight')
-                desired = {x['id']: x for x in entry['desired']}
-                rows = page.locator('tr.nomenclature-row')
-                for index, item in enumerate(items):
-                    q = desired[item['id']]['quantity']
-                    if D(q) != D(item['quantity']):
-                        field = rows.nth(index).locator('input.quantity')
-                        field.fill(q + '0' if '.' in q else q + '.0')
-                        field.press('End'); field.press('Backspace'); field.press('Tab')
-                if fingerprint(form_items(page)) != entry['after']:
-                    raise Stop('Browser quantity events did not apply')
+                fill_quantities(page, entry['desired'])
                 buttons = page.locator('input[type=submit][value="Сохранить"]:visible')
                 if buttons.count() != 1:
                     raise Stop('Save button ambiguous')
