@@ -21,6 +21,14 @@ class ReadOnlyChecks(unittest.TestCase):
         self.assertIsNone(module.supplier_column("Комбинат Питания №3", headers))
         self.assertIsNone(module.supplier_column("КИСЕЛЬ", ["Кисель", "Кисель"]))
 
+    def test_surname_typo_and_inflection(self):
+        match = module.supplier_column
+        self.assertEqual(match("ИП Сиразетдинов Артур Феликсович", ["Дата", "Сиразединов"]), 1)
+        self.assertEqual(match("ИП Сиразединова", ["Сиразетдинов"]), 0)
+        self.assertIsNone(match("ИП Сиразединов", ["Сиразетдинов", "Сиразединова"]))
+        self.assertEqual(match("ИП Мамадалиев Мухаммадали Арипович", ["Мамадалиев", "Маматулин"]), 0)
+        self.assertIsNone(match("ИП Мамадалиев", ["Маматулин"]))
+
     def test_slot_and_department_filter(self):
         def row(ident, time, department="Нужный филиал"):
             values = ["", ident, "date", "arrival", "shipment", "", department,

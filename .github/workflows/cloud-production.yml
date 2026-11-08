@@ -1,0 +1,64 @@
+name: LifeMart production pass
+run-name: LifeMart ${{ inputs.operation }} (${{ inputs.slots }})
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Preview first; apply saves requests and facts
+        type: choice
+        options: [preview, apply]
+        default: preview
+        required: true
+      slots:
+        description: Sending slots in Asia/Yekaterinburg
+        default: '15:00,16:00'
+        required: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: lifemart-production
+  cancel-in-progress: false
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      REQUEST_SLOTS: ${{ inputs.slots }}
+      LIFEMART_LOGIN: ${{ secrets.LIFEMART_LOGIN }}
+      LIFEMART_PASSWORD: ${{ secrets.LIFEMART_PASSWORD }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify safety, allocation and matching
+        run: python3 -m unittest discover -s tests -v
+      - name: Install pinned browser runtime
+        run: |
+          python3 -m pip install playwright==1.62.0
+          python3 -m playwright install --with-deps chromium
+      - name: Restore pending-save fingerprints
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/lifemart-history
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[] | select(.name | startswith("lifemart-journal-")) | select(.expired == false) | [.workflow_run.id, .name] | @tsv' > /tmp/lifemart-artifacts.tsv
+          while IFS=$'\t' read -r run_id artifact_name; do
+            gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name "$artifact_name" --dir "/tmp/lifemart-history/$run_id"
+          done < /tmp/lifemart-artifacts.tsv
+      - name: Read-only complete preflight
+        run: python3 scripts/cloud_production.py prepare --slots "$REQUEST_SLOTS"
+      - name: Persist fingerprints before any save
+        if: inputs.operation == 'apply'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: lifemart-journal-${{ github.run_id }}
+          path: /tmp/lifemart-journal/journal.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Save and verify requests and facts
+        if: inputs.operation == 'apply'
+        run: python3 scripts/cloud_production.py apply
+      - name: Remove private working plan
+        if: always()
+        run: rm -f /tmp/lifemart-plan.json
