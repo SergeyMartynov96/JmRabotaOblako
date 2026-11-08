@@ -1,0 +1,48 @@
+name: LifeMart cloud read-only test
+
+on:
+  workflow_dispatch:
+    inputs:
+      slots:
+        description: Sending slots, local Yekaterinburg time
+        default: '15:00,16:00'
+        required: true
+  schedule:
+    # 14:00 Yekaterinburg = 09:00 UTC. Date guard makes this a one-day test.
+    - cron: '0 9 8 11 *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lifemart-readonly-test
+  cancel-in-progress: false
+
+jobs:
+  read-only-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check one-day schedule
+        id: date
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$(TZ=Asia/Yekaterinburg date +%F)" = 2026-11-08 ]; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout
+        if: steps.date.outputs.run == 'true'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify safety and parsing
+        if: steps.date.outputs.run == 'true'
+        run: python3 -m unittest discover -s tests -v
+      - name: Read-only functional check
+        if: steps.date.outputs.run == 'true'
+        env:
+          REQUEST_SLOTS: ${{ inputs.slots || '15:00,16:00' }}
+          LIFEMART_LOGIN: ${{ secrets.LIFEMART_LOGIN }}
+          LIFEMART_PASSWORD: ${{ secrets.LIFEMART_PASSWORD }}
+        run: python3 scripts/cloud_readonly_test.py --slots "$REQUEST_SLOTS"
