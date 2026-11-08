@@ -1,0 +1,543 @@
+#!/usr/bin/env python3
+"""Two-phase production pass; prepare is read-only. Never log business payloads."""
+import argparse
+import datetime as dt
+from decimal import Decimal, ROUND_CEILING
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import sys
+import time
+import urllib.request
+from zoneinfo import ZoneInfo
+
+import cloud_readonly_test as ro
+D = Decimal
+
+
+class Stop(RuntimeError):
+    pass
+
+
+def digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def fingerprint(items):
+    return digest(sorted((x['id'], str(D(x['quantity']).normalize()),
+                          str(D(x['price']).normalize())) for x in items))
+
+
+class Card(ro.Document):
+    def __init__(self):
+        super().__init__()
+        self.items = []
+        self.item = None
+        self.kind = ''
+
+    def handle_starttag(self, tag, attrs):
+        super().handle_starttag(tag, attrs)
+        attrs = dict(attrs)
+        if tag == 'tr':
+            self.item = {}
+        if tag == 'td':
+            self.kind = attrs.get('class', '')
+            if 'supply-nomenclature' in self.kind:
+                self.item['id'] = attrs.get('data-id')
+
+    def handle_endtag(self, tag):
+        if tag == 'td' and self.cell is not None and self.item is not None:
+            val = ' '.join(self.cell)
+            for cls, key in [('supply-nomenclature', 'name'), ('supply-totla-count', 'quantity'),
+                             ('supply-item-price', 'price'), ('supply-package-volume', 'packing')]:
+                if cls in self.kind.split():
+                    self.item[key] = val
+        if tag == 'tr' and self.item and 'id' in self.item:
+            self.items.append(self.item)
+        super().handle_endtag(tag)
+
+    def field(self, name):
+        matches = [r[1] for r in self.rows if len(r) == 2 and r[0] == name]
+        if len(matches) != 1:
+            raise Stop('Card field missing or ambiguous')
+        return matches[0]
+
+
+def card(client, ident, title, supplier, arrival=None):
+    doc = Card()
+    doc.feed(client.request('/turnover/supplyRequest/view/' + ident))
+    if ro.normalize(doc.field('Подразделение')) != ro.normalize(title):
+        raise Stop('Card branch changed')
+    if ro.normalize(doc.field('Поставщик')) != ro.normalize(supplier):
+        raise Stop('Card supplier changed')
+    if arrival and doc.field('Дата привоза заявки') != arrival:
+        raise Stop('Card arrival changed')
+    if not doc.items or len({i['id'] for i in doc.items}) != len(doc.items):
+        raise Stop('Card item schema invalid')
+    for item in doc.items:
+        for key in ('quantity', 'price', 'packing'):
+            item[key] = str(ro.number(item[key]))
+        if D(item['quantity']) < 0 or D(item['price']) <= 0:
+            raise Stop('Card quantities/prices invalid')
+    if sum(D(x['quantity']) * D(x['price']) for x in doc.items) != sum(doc.prices):
+        raise Stop('Card totals inconsistent')
+    return doc
+
+
+def total(items):
+    return sum((D(x['quantity']) * D(x['price']) for x in items), D(0))
+
+
+def report(client, dep, title, date, arrival=False):
+    field = 'date_arrives' if arrival else 'date_created'
+    params = {'SupplyRequest[department_id][]': dep,
+              'SupplyRequest[date_created_from]': '', 'SupplyRequest[date_created_to]': '',
+              'SupplyRequest[date_arrives_from]': '', 'SupplyRequest[date_arrives_to]': '',
+              f'SupplyRequest[{field}_from]': date, f'SupplyRequest[{field}_to]': date,
+              'SupplyRequest[actual_applications]': '1', 'yt11': 'Сформировать'}
+    doc = ro.Document()
+    doc.feed(client.request('/turnover/supplyRequest/report', params))
+    if any(re.search(r'(?:_page|page)=', link) for link in doc.links):
+        raise Stop('Paginated report; refusing incomplete group')
+    results = []
+    for row in doc.rows:
+        if len(row) < 12 or not re.fullmatch(r'\d{7,12}', row[1]):
+            continue
+        if ro.normalize(row[6]) != ro.normalize(title):
+            raise Stop('Report department mismatch')
+        results.append({'id': row[1], 'supplier': row[8], 'status': row[9]})
+    if len({x['id'] for x in results}) != len(results):
+        raise Stop('Duplicate report IDs')
+    return results
+
+
+def top_key(name):
+    name = re.sub(r'\b\d+(?:[.,]\d+)?\s*(?:кг|гр|г|мл|л)\b|\b\d{8,14}\b', '', name, flags=re.I)
+    name = re.sub(r'\((?:KVI|Тмн|СПТ)\)', '', name, flags=re.I)
+    name = name.replace('Жизньмарт', '').replace('ЖМ', '')
+    return ro.normalize(name)
+
+
+def tops(branch):
+    text = (ro.ROOT / 'LifeMart-Codex-Orders.md').read_text()
+    section = text.split('## Топы ' + branch, 1)[1].split('\n## ', 1)[0]
+    names = [top_key(line[2:]) for line in section.splitlines() if line.startswith('- ')]
+    if len(names) < 40:
+        raise Stop('Top list incomplete')
+    return names
+
+
+def is_top(name, names):
+    value = top_key(name)
+    if value in names:
+        return True
+    # Uncertain near-matches are protected as potential tops.
+    from difflib import SequenceMatcher
+    return any(SequenceMatcher(None, value, x).ratio() >= .84 for x in names)
+
+
+def allocate(items, target, top_names):
+    """Reduce evenly, weighting proportional loss twice for a top. Preserve 1 and 2."""
+    result = [dict(x) for x in items]
+    originals = [D(x['quantity']) for x in items]
+    floors, steps, weights = [], [], []
+    for item, original in zip(items, originals):
+        step = D(item['packing'])
+        if step <= 0 or original % step or original != original.to_integral_value() or step != step.to_integral_value():
+            raise Stop('Unsupported fractional or packing schema')
+        top = is_top(item['name'], top_names)
+        keep = max(D(2), original * (D('.65') if top else D('.4')))
+        minimum = min(original, (keep / step).to_integral_value(rounding=ROUND_CEILING) * step)
+        if item.get('restricted'):
+            minimum = max(minimum, D(item['minimum']))
+        floors.append(minimum)
+        steps.append(step)
+        weights.append(D(2) if top else D(1))
+    for _ in range(100000):
+        current = total(result)
+        choices = []
+        for i, item in enumerate(result):
+            q = D(item['quantity'])
+            after = current - steps[i] * D(item['price'])
+            if q - steps[i] >= floors[i] and abs(after - target) < abs(current - target):
+                loss = (originals[i] - q + steps[i]) / max(originals[i], D(1)) * weights[i]
+                choices.append((loss, abs(after - target), i))
+        if not choices:
+            return result
+        i = min(choices)[2]
+        result[i]['quantity'] = str(D(result[i]['quantity']) - steps[i])
+    raise Stop('Allocation did not converge')
+
+
+def a1(row, col):
+    name = ''
+    col += 1
+    while col:
+        col, digit = divmod(col - 1, 26)
+        name = chr(65 + digit) + name
+    return name + str(row + 1)
+
+
+class Sheet:
+    def __init__(self, browser, ident, gid):
+        self.ident, self.gid = ident, gid
+        self.page = browser.new_page()
+        self.page.goto(f'https://docs.google.com/spreadsheets/d/{ident}/edit?gid={gid}',
+                       wait_until='domcontentloaded', timeout=60000)
+        self.page.locator('#t-name-box').wait_for(timeout=45000)
+        self.refresh()
+
+    def refresh(self):
+        self.headers, self.rows = ro.spreadsheet(self.ident, self.gid)
+
+    def select(self, cell):
+        box = self.page.locator('#t-name-box')
+        box.fill(cell)
+        box.press('Enter')
+        self.page.wait_for_timeout(250)
+        if box.input_value().upper() != cell.upper():
+            raise Stop('Sheet selection mismatch')
+
+    def formula(self, cell):
+        self.select(cell)
+        text = self.page.locator('#t-formula-bar-input').inner_text().strip()
+        self.page.wait_for_timeout(200)
+        if text != self.page.locator('#t-formula-bar-input').inner_text().strip():
+            raise Stop('Sheet selection not stable')
+        return text
+
+    def locate(self, supplier, arrival):
+        col = ro.supplier_column(supplier, self.headers)
+        rows = [i for i, r in enumerate(self.rows) if len(r) > 1 and r[1] == arrival]
+        if col is None or len(rows) != 1:
+            raise Stop('Sheet supplier/date ambiguous')
+        row = rows[0]
+        header_rows = [i for i, r in enumerate(self.rows) if r == self.headers]
+        if len(header_rows) != 1:
+            raise Stop('Sheet header ambiguous')
+        if self.formula(a1(header_rows[0], col)) != self.headers[col].strip():
+            raise Stop('Sheet header changed')
+        if self.formula(a1(row, 1)) != arrival:
+            raise Stop('Sheet date changed')
+        return row, col
+
+    def write(self, group):
+        self.refresh()
+        row, col = self.locate(group['supplier'], group['arrival'])
+        if a1(row, col) != group['cell'] or self.formula(group['cell']) != group['formula']:
+            raise Stop('Concurrent sheet change; refusing overwrite')
+        self.select(group['cell'])
+        self.page.keyboard.type(group['rounded'])
+        self.page.keyboard.press('Enter')
+        for _ in range(6):
+            self.refresh()
+            try:
+                actual = ro.number(self.rows[row][col])
+            except Exception:
+                actual = None
+            if actual == D(group['rounded']) and self.formula(group['cell']) == group['rounded']:
+                return
+            self.page.wait_for_timeout(1000)
+        raise Stop('Sheet write not verified; recover by re-reading SU')
+
+
+def form_items(page):
+    return page.locator('tr.nomenclature-row').evaluate_all('''rows => rows.map(row => {
+      const q = row.querySelector('input.quantity');
+      const value = suffix => row.querySelector('input[name$="[' + suffix + ']"]')?.value;
+      return {id:value('id_supply'), name:row.querySelector('td a')?.textContent.trim(),
+        quantity:q?.value, price:value('price'), packing:q?.dataset.packing,
+        restricted:q?.dataset.hasEditRestrictions === '1', minimum:q?.dataset.min_value,
+        fraction:q?.dataset.allow_fraction};
+    })''')
+
+
+def sync_cookies(client, context):
+    jar = next(h.cookiejar for h in client.opener.handlers if hasattr(h, 'cookiejar'))
+    context.add_cookies([{'name': c.name, 'value': c.value, 'domain': c.domain,
+                         'path': c.path, 'secure': c.secure} for c in jar])
+
+
+def open_form(context, client, entry, title):
+    sync_cookies(client, context)
+    page = context.new_page()
+    page.goto(ro.SU + '/turnover/supplyRequest/updateSuppliers/' + entry['id'],
+              wait_until='domcontentloaded', timeout=45000)
+    page.locator('#update_request-form').wait_for(timeout=20000)
+    rows = page.locator('table.detail-view tr').evaluate_all(
+        'rows => rows.map(r => [...r.querySelectorAll("th,td")].map(c => c.textContent.trim()))')
+    fields = dict(r for r in rows if len(r) == 2)
+    if fields.get('Заявка') != entry['id'] + ' от ' + title:
+        raise Stop('Edit form department/ID mismatch')
+    if fields.get('Дата привоза в магазин') != entry['arrival']:
+        raise Stop('Edit form arrival mismatch')
+    supplier = page.locator('#update_request-form .supplier table tr th').first.inner_text().strip()
+    if ro.normalize(supplier) != ro.normalize(entry['supplier']):
+        raise Stop('Edit form supplier mismatch')
+    items = form_items(page)
+    if not items or any(not x.get('id') or not x.get('name') for x in items):
+        raise Stop('Edit form schema unsupported')
+    return page, items, ro.number(fields['Минимальная сумма заявки'])
+
+
+def journal_history(directory):
+    entries = {}
+    for path in Path(directory).rglob('journal.json'):
+        doc = json.loads(path.read_text())
+        if doc.get('schema') != 1:
+            raise Stop('Unknown journal schema')
+        for key, val in doc['entries'].items():
+            entries.setdefault(key, []).append(val)
+    return entries
+
+
+def prepare(client, browser, context, args):
+    date = dt.datetime.now(ZoneInfo('Asia/Yekaterinburg')).date()
+    history = journal_history(args.history)
+    plan = {'schema': 1, 'date': date.isoformat(), 'created': time.time(), 'branches': []}
+    journal = {'schema': 1, 'entries': {}}
+    slots = set(args.slots.split(','))
+    if not slots or any(not re.fullmatch(r'\d{2}:\d{2}', x) for x in slots):
+        raise Stop('Invalid slots')
+    for branch in ro.BRANCHES:
+        name, dep, ident, gid = branch
+        info = json.loads(client.request(f'/dashboad/api/header?departmentId={dep}'))
+        if not info.get('success') or info.get('department_info', {}).get('id') != dep:
+            raise Stop('Department access failed')
+        title = info['department_info']['title']
+        sheet = Sheet(browser, ident, gid)
+        candidates = report(client, dep, title, date.strftime('%d.%m.%Y'))
+        selected = []
+        skipped = 0
+        for entry in candidates:
+            match = re.search(r'Ожидает отправки\s*\((\d{2}:\d{2})\)', entry['status'])
+            if not match or match.group(1) not in slots:
+                continue
+            if ro.supplier_column(entry['supplier'], sheet.headers) is None:
+                skipped += 1
+                continue
+            doc = card(client, entry['id'], title, entry['supplier'])
+            entry.update(arrival=doc.field('Дата привоза заявки'), items=doc.items)
+            selected.append(entry)
+        groups = {}
+        selected_ids = {x['id'] for x in selected}
+        for entry in selected:
+            key = (entry['supplier'], entry['arrival'])
+            groups.setdefault(key, []).append(entry)
+        output = {'name': name, 'department': dep, 'title': title, 'ident': ident,
+                  'gid': gid, 'groups': [], 'skipped': skipped}
+        for (supplier, arrival), picked in groups.items():
+            complete = report(client, dep, title, arrival, arrival=True)
+            related = [x for x in complete if ro.normalize(x['supplier']) == ro.normalize(supplier)]
+            if not {x['id'] for x in picked} <= {x['id'] for x in related}:
+                raise Stop('Arrival report incomplete')
+            cards = []
+            for entry in related:
+                doc = card(client, entry['id'], title, supplier, arrival)
+                entry.update(items=doc.items, arrival=arrival, before=fingerprint(doc.items))
+                cards.append(entry)
+            current = sum((total(x['items']) for x in cards), D(0))
+            row, col = sheet.locate(supplier, arrival)
+            cell = a1(row, col)
+            formula = sheet.formula(cell)
+            value = sheet.rows[row][col] if col < len(sheet.rows[row]) else ''
+            group = {'supplier': supplier, 'arrival': arrival, 'cell': cell, 'formula': formula,
+                     'cards': cards, 'before': str(current), 'plan': None}
+            recovered = set()
+            for entry in cards:
+                prior = history.get(digest(entry['id']), [])
+                if prior and not any(entry['before'] in (h['before'], h['after']) for h in prior):
+                    raise Stop('Pending journal differs from current card')
+                if any(entry['before'] == h['after'] for h in prior):
+                    recovered.add(entry['id'])
+            if name == 'АВ12':
+                target = current
+                group['decision'] = 'transfer'
+            elif formula.startswith('='):
+                target = ro.number(value)
+                if target <= 0:
+                    raise Stop('Nonpositive supplier plan')
+                group.update(plan=str(target), decision='plan')
+            elif formula and ro.number(formula) == current.quantize(D('1'), rounding=ro.ROUND_HALF_UP):
+                target = current
+                group['decision'] = 'already-fact'
+            else:
+                raise Stop('No unambiguous formula plan or confirmed fact')
+            editable = []
+            fixed = D(0)
+            for entry in cards:
+                entry['after'] = entry['before']
+                if entry['id'] not in selected_ids or name == 'АВ12' or entry['id'] in recovered or target >= current:
+                    fixed += total(entry['items'])
+                    continue
+                page, items, minimum = open_form(context, client, entry, title)
+                if fingerprint(items) != entry['before']:
+                    raise Stop('Edit form differs from card')
+                entry.update(items=items, minimum=str(minimum))
+                editable.append(entry)
+                page.close()
+            combined = [dict(i, request=e['id']) for e in editable for i in e['items']]
+            if combined:
+                result = allocate(combined, max(D(0), target - fixed), tops(name))
+                for entry in editable:
+                    desired = [i for i in result if i['request'] == entry['id']]
+                    if total(desired) < max(D(entry['minimum']),
+                        D(800) if re.search('кумкват|фирсова', supplier, re.I) else D(0)):
+                        raise Stop('Supplier minimum would be violated')
+                    entry['desired'] = desired
+                    entry['after'] = fingerprint(desired)
+            expected = sum((total(e.get('desired', e['items'])) for e in cards), D(0))
+            group.update(expected=str(expected), rounded=str(expected.quantize(D('1'), rounding=ro.ROUND_HALF_UP)))
+            for entry in cards:
+                if entry['after'] != entry['before']:
+                    journal['entries'][digest(entry['id'])] = {'before': entry['before'], 'after': entry['after']}
+            output['groups'].append(group)
+        # Forecast includes the other supplier cells in the existing daily block.
+        if name in ('М42', 'Г34'):
+            top_end = next((i for i, h in enumerate(sheet.headers) if 'готовая' in h.casefold()), None)
+            if top_end is None:
+                raise Stop('Daily supplier block missing')
+            for arrival in {g['arrival'] for g in output['groups']}:
+                row = next(r for r in sheet.rows if len(r) > 1 and r[1] == arrival)
+                forecast = D(0)
+                for col in range(2, top_end):
+                    gs = [g for g in output['groups'] if g['arrival'] == arrival and g['cell'] == a1(sheet.rows.index(row), col)]
+                    value = gs[0]['expected'] if gs else (row[col] if col < len(row) else '')
+                    if value.strip() not in ('', '-', '–', '—'):
+                        forecast += ro.number(value)
+                weekday = dt.datetime.strptime(arrival, '%d.%m.%Y').weekday()
+                label = 'Лимит, воскресенье' if weekday == 6 else 'Лимит, суббота' if weekday == 5 else ('Лимит, пн–сб' if name == 'Г34' else 'Лимит, будни')
+                limits = [ro.number(r[2]) for r in sheet.rows if r and r[0].startswith(label)]
+                if len(limits) != 1:
+                    raise Stop('Daily limit ambiguous')
+                limit = min(limits[0], D(60000)) if name == 'Г34' else limits[0] + D(1000)
+                if name == 'Г34' and len(row) > top_end + 1 and sheet.headers[top_end + 1].casefold() == 'план' and row[top_end + 1].strip():
+                    limit = min(limit, ro.number(row[top_end + 1]))
+                if forecast > limit:
+                    raise Stop('Daily forecast exceeds permitted limit')
+        sheet.page.close()
+        plan['branches'].append(output)
+        print(f'{name}: prepared groups={len(output["groups"])}; skipped={skipped}', flush=True)
+    if not any(b['groups'] for b in plan['branches']):
+        raise Stop('No in-scope cards; pass incomplete')
+    for path, value in [(args.plan, plan), (args.journal, journal)]:
+        Path(path).write_text(json.dumps(value, ensure_ascii=False, indent=2))
+        Path(path).chmod(0o600)
+    print('PASS: complete read-only preflight; no changes applied.', flush=True)
+
+
+def apply(client, browser, context, args):
+    plan = json.loads(Path(args.plan).read_text())
+    if plan.get('schema') != 1 or time.time() - plan['created'] > 600:
+        raise Stop('Plan expired; prepare again')
+    if plan['date'] != dt.datetime.now(ZoneInfo('Asia/Yekaterinburg')).date().isoformat():
+        raise Stop('Plan date expired')
+    for branch in plan['branches']:
+        title = branch['title']
+        client.request(f'/dashboad/api/header?departmentId={branch["department"]}')
+        sheet = Sheet(browser, branch['ident'], branch['gid'])
+        changed = written = 0
+        for group in branch['groups']:
+            sheet.refresh()
+            row, col = sheet.locate(group['supplier'], group['arrival'])
+            if a1(row, col) != group['cell'] or sheet.formula(group['cell']) != group['formula']:
+                raise Stop('Sheet changed since preflight')
+            related = report(client, branch['department'], title, group['arrival'], arrival=True)
+            ids = {x['id'] for x in related if ro.normalize(x['supplier']) == ro.normalize(group['supplier'])}
+            if ids != {x['id'] for x in group['cards']}:
+                raise Stop('Request group changed since preflight')
+            # Read every card before the first write for this supplier.
+            for entry in group['cards']:
+                doc = card(client, entry['id'], title, entry['supplier'], group['arrival'])
+                if fingerprint(doc.items) != entry['before']:
+                    raise Stop('Card changed since preflight')
+                if entry['before'] != entry['after'] and doc.field('Статус').split('История')[0].strip() != entry['status']:
+                    raise Stop('Request status changed')
+            for entry in group['cards']:
+                if entry['before'] == entry['after']:
+                    continue
+                if branch['name'] == 'АВ12':
+                    raise Stop('AV12 is strictly transfer-only')
+                page, items, minimum = open_form(context, client, entry, title)
+                if fingerprint(items) != entry['before']:
+                    raise Stop('Form changed since preflight')
+                desired = {x['id']: x for x in entry['desired']}
+                rows = page.locator('tr.nomenclature-row')
+                for index, item in enumerate(items):
+                    q = desired[item['id']]['quantity']
+                    if D(q) != D(item['quantity']):
+                        field = rows.nth(index).locator('input.quantity')
+                        field.fill(q + '0' if '.' in q else q + '.0')
+                        field.press('End'); field.press('Backspace'); field.press('Tab')
+                if fingerprint(form_items(page)) != entry['after']:
+                    raise Stop('Browser quantity events did not apply')
+                buttons = page.locator('input[type=submit][value="Сохранить"]:visible')
+                if buttons.count() != 1:
+                    raise Stop('Save button ambiguous')
+                buttons.click()
+                page.wait_for_load_state('domcontentloaded')
+                saved = card(client, entry['id'], title, entry['supplier'], group['arrival'])
+                if fingerprint(saved.items) != entry['after']:
+                    if fingerprint(saved.items) != entry['before']:
+                        raise Stop('Unexpected partial save; do not retry blindly')
+                    buttons = page.locator('input[type=submit][value="Сохранить"]:visible')
+                    if buttons.count() != 1 or 'updateSuppliers/' + entry['id'] not in page.url:
+                        raise Stop('Confirmation missing; no verified save')
+                    buttons.click()
+                    page.wait_for_load_state('domcontentloaded')
+                    saved = card(client, entry['id'], title, entry['supplier'], group['arrival'])
+                if fingerprint(saved.items) != entry['after']:
+                    raise Stop('Saved card not verified')
+                changed += 1
+                page.close()
+            actual = D(0)
+            for entry in group['cards']:
+                doc = card(client, entry['id'], title, entry['supplier'], group['arrival'])
+                if fingerprint(doc.items) != entry['after']:
+                    raise Stop('Final card verification failed')
+                actual += total(doc.items)
+            if actual != D(group['expected']):
+                raise Stop('Final aggregate mismatch')
+            sheet.write(group)
+            written += 1
+            print(f'{branch["name"]}: saved={changed}; verified_cells={written}', flush=True)
+        sheet.page.close()
+    print('PASS: production pass saved and verified.', flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('mode', choices=['prepare', 'apply'])
+    parser.add_argument('--slots', default='15:00,16:00')
+    parser.add_argument('--plan', default='/tmp/lifemart-plan.json')
+    parser.add_argument('--journal', default='/tmp/lifemart-journal/journal.json')
+    parser.add_argument('--history', default='/tmp/lifemart-history')
+    args = parser.parse_args()
+    if os.getenv('GITHUB_ACTIONS') != 'true':
+        raise Stop('Production runner is available only in GitHub Actions')
+    from playwright.sync_api import sync_playwright
+    client = ro.ReadOnlySU()
+    client.login()
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context()
+        if args.mode == 'prepare':
+            Path(args.journal).parent.mkdir(parents=True, exist_ok=True)
+            prepare(client, browser, context, args)
+        else:
+            apply(client, browser, context, args)
+        browser.close()
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Stop as exc:
+        print('FAIL: ' + str(exc) + '; stopped before further changes.', file=sys.stderr)
+        sys.exit(1)
+    except Exception as exc:
+        # Remote error messages can contain business data and credentials.
+        print('FAIL: ' + type(exc).__name__ + '; stopped before further changes.', file=sys.stderr)
+        sys.exit(1)

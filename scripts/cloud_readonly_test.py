@@ -88,7 +88,33 @@ def supplier_column(supplier, headers):
             continue
         if supplier == name or supplier.startswith(name + " "):
             matches.append(index)
-    return matches[0] if len(matches) == 1 else None
+    if matches:
+        return matches[0] if len(matches) == 1 else None
+    # Personal suppliers are often abbreviated to a surname in the sheet.
+    # Permit a one-character typo/inflection, but never choose between rivals.
+    def distance(a, b):
+        previous = list(range(len(b) + 1))
+        for i, x in enumerate(a, 1):
+            current = [i]
+            for j, y in enumerate(b, 1):
+                current.append(min(current[-1] + 1, previous[j] + 1,
+                                   previous[j - 1] + (x != y)))
+            previous = current
+        return previous[-1]
+    def surname_key(value):
+        return re.sub(r"(ов|ев|ин)а$", r"\1", value)
+    surname = surname_key(supplier.split()[0]) if supplier else ""
+    candidates = []
+    for index, header in enumerate(headers):
+        words = normalize(header).split()
+        if not words or len(surname) < 6 or len(words[0]) < 6:
+            continue
+        # A close surname is insufficient when the sheet gives a full name.
+        if len(words) > 1 and supplier.split()[1:] != words[1:]:
+            continue
+        if distance(surname, surname_key(words[0])) <= 1:
+            candidates.append(index)
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def credentials():
