@@ -430,7 +430,8 @@ def selected_for_pass(entry, slots, include_sent=False):
     slot = pending_slot(entry['status'])
     if slot is not None:
         return slot in slots
-    return include_sent and bool(re.match(r'^(?:Отправлен|Подтвержд)', entry['status'], re.I))
+    return include_sent and (entry['status'].strip() == 'На рассмотрении' or
+                             bool(re.match(r'^(?:Отправлен|Подтвержд)', entry['status'], re.I)))
 
 
 def editable_now(entry, now=None):
