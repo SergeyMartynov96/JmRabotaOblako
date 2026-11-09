@@ -613,6 +613,9 @@ def apply(client, browser, context, args):
                 buttons = page.locator('input[type=submit][value="Сохранить"]:visible')
                 if buttons.count() != 1:
                     raise Stop('Save button ambiguous')
+                check_deadline()
+                if not editable_now(entry):
+                    raise Stop('Request sending slot has passed before save')
                 buttons.click()
                 page.wait_for_load_state('domcontentloaded')
                 saved = card(client, entry['id'], title, entry['supplier'], group['arrival'])
@@ -622,6 +625,9 @@ def apply(client, browser, context, args):
                     buttons = page.locator('input[type=submit][value="Сохранить"]:visible')
                     if buttons.count() != 1 or 'updateSuppliers/' + entry['id'] not in page.url:
                         raise Stop('Confirmation missing; no verified save')
+                    check_deadline()
+                    if not editable_now(entry):
+                        raise Stop('Request sending slot has passed before confirmation')
                     buttons.click()
                     page.wait_for_load_state('domcontentloaded')
                     saved = card(client, entry['id'], title, entry['supplier'], group['arrival'])
