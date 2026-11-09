@@ -11,7 +11,7 @@ on:
       operation:
         description: Preview first; apply saves requests and facts
         type: choice
-        options: [preview, apply, verify, monitor-verify]
+        options: [preview, apply, recover, verify, monitor-verify]
         default: preview
         required: true
       slots:
@@ -88,6 +88,7 @@ jobs:
           LIFEMART_DEADLINE: ${{ steps.window.outputs.deadline }}
           LIFEMART_WINDOW_START: ${{ steps.window.outputs.start }}
           LIFEMART_EXPECTED_DATE: ${{ steps.window.outputs.expected_date }}
+          LIFEMART_INCLUDE_SENT: ${{ steps.window.outputs.include_sent }}
           LIFEMART_ALLOW_EMPTY: ${{ steps.window.outputs.allow_empty }}
         run: python3 scripts/cloud_production.py prepare --slots "$REQUEST_SLOTS"
       - name: Persist fingerprints before any save

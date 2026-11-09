@@ -26,6 +26,18 @@ class DailyScheduleChecks(unittest.TestCase):
         self.assertEqual(schedule.resolve('workflow_dispatch', operation='apply', slots='11:00')['slots'], '11:00')
         self.assertEqual(schedule.resolve('workflow_dispatch')['allow_empty'], 'false')
 
+    def test_recovery_has_date_deadline_and_no_automatic_success_receipt(self):
+        config = schedule.resolve('workflow_dispatch', operation='recover', slots='09:00,10:00',
+                                  requested_at='2026-11-09T04:01:00Z')
+        self.assertEqual(config['operation'], 'apply')
+        self.assertEqual(config['deadline'], '10:00')
+        self.assertEqual(config['expected_date'], '2026-11-09')
+        self.assertEqual(config['include_sent'], 'true')
+        self.assertEqual(config['window_key'], '')
+        with self.assertRaises(ValueError):
+            schedule.resolve('workflow_dispatch', operation='recover', slots='09:00,10:00',
+                             requested_at='2026-11-09T05:00:00Z')
+
     def test_unknown_schedule_fails_closed(self):
         with self.assertRaises(ValueError):
             schedule.resolve('schedule', '0 0 * * *')

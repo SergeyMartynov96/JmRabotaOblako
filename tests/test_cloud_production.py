@@ -26,7 +26,7 @@ class ProductionChecks(unittest.TestCase):
     def test_singletons_and_twos_survive(self):
         original = [item(1, 'Обычное', 1), item(2, 'Другое', 2), item(3, 'Третье', 10)]
         result = m.allocate(original, D(0), [])
-        self.assertEqual([D(x['quantity']) for x in result], [D(1), D(2), D(4)])
+        self.assertEqual([D(x['quantity']) for x in result], [D(1), D(2), D(2)])
         self.assertEqual(original[2]['quantity'], '10')
 
     def test_tops_reduced_less_and_packing_obeyed(self):
@@ -35,6 +35,39 @@ class ProductionChecks(unittest.TestCase):
         self.assertGreater(D(result[0]['quantity']), D(result[1]['quantity']))
         self.assertEqual(D(result[2]['quantity']) % 3, 0)
         self.assertGreaterEqual(D(result[0]['quantity']), 7)
+
+    def test_top_can_reduce_below_arbitrary_percentage_floor(self):
+        result = m.allocate([item(1, 'Top', 20), item(2, 'Other', 20)], D(1000), ['top'])
+        self.assertLess(D(result[0]['quantity']), D(13))
+        self.assertGreater(D(result[0]['quantity']), D(result[1]['quantity']))
+        self.assertLessEqual(abs(m.total(result) - D(1000)), D(100))
+
+    def test_day_budget_uses_supplier_slack_without_touching_sent(self):
+        headers = ['Day', 'Дата', 'A', 'B', 'Итого готовая еда']
+        rows = [['Лимит, пн–сб', '', '60000'], ['ср', '11.11.2026', '30000', '30000']]
+        original = [item(1, 'Other', 40, '1000')]
+        desired = [item(1, 'Other', 31, '1000')]
+        fixed = dict(items=[item(2, 'Sent', 30, '1000')], before='same', after='same')
+        group = dict(arrival='11.11.2026', cell='C2', expected='31000', plan='30000',
+                     supplier='A', cards=[dict(items=original, desired=desired, minimum='0')])
+        sent = dict(arrival='11.11.2026', cell='D2', expected='30000', plan=None,
+                    supplier='B', cards=[fixed])
+        m.balance_budgets('Г34', headers, rows, [group, sent])
+        self.assertEqual(group['expected'], '30000')
+        self.assertEqual(fixed['items'][0]['quantity'], '30')
+        self.assertNotIn('desired', fixed)
+        self.assertEqual(original[0]['quantity'], '40')
+
+    def test_infeasible_budget_stops_with_minima_and_tolerance_intact(self):
+        headers = ['Day', 'Дата', 'A', 'Итого готовая еда']
+        rows = [['Лимит, пн–сб', '', '60000'], ['ср', '11.11.2026', '64000']]
+        entry = dict(items=[item(1, 'Other', 80, '1000')],
+                     desired=[item(1, 'Other', 64, '1000')], minimum='0')
+        group = dict(arrival='11.11.2026', cell='C2', expected='64000', plan='64000',
+                     supplier='A', cards=[entry])
+        with self.assertRaises(m.Stop):
+            m.balance_budgets('Г34', headers, rows, [group])
+        self.assertGreaterEqual(D(group['expected']), D(64000) * D('.95'))
 
     def test_below_plan_never_increased(self):
         original = [item(1, 'Обычное', 4)]
@@ -60,6 +93,21 @@ class ProductionChecks(unittest.TestCase):
         self.assertEqual(m.pending_slot('Ожидает отправки (16:00) +5 GMT'), '16:00')
         self.assertEqual(m.pending_slot('Ожидает отправки (16:00) История'), '16:00')
         self.assertIsNone(m.pending_slot('Отправлено'))
+
+    def test_recovery_selects_sent_but_never_edits_expired_or_sent(self):
+        import datetime as dt
+        now = dt.datetime(2026, 11, 9, 9, 5)
+        early = dict(status='Ожидает отправки (09:00) +5 GMT')
+        future = dict(status='Ожидает отправки (10:00) +5 GMT')
+        sent = dict(status='Отправлено')
+        self.assertFalse(m.editable_now(early, now))
+        self.assertFalse(m.editable_now(sent, now))
+        self.assertTrue(m.editable_now(future, now))
+        self.assertTrue(m.selected_for_pass(sent, {'10:00'}, True))
+        self.assertFalse(m.selected_for_pass(sent, {'10:00'}))
+        self.assertFalse(m.selected_for_pass(dict(status='Не отправлено'), {'10:00'}, True))
+        self.assertFalse(m.selected_for_pass(dict(status='Отменено'), {'10:00'}, True))
+        self.assertFalse(m.selected_for_pass(dict(status='Ожидает отправки (11:00)'), {'10:00'}, True))
 
     def test_daily_budget_is_independent_of_broken_total_cell(self):
         headers = ['День', 'Дата', 'Поставщик', 'СУММА ГОТОВАЯ+ЯПОНИЯ', 'план']
