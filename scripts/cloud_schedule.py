@@ -24,7 +24,7 @@ def resolve(event, schedule='', operation='preview', slots='15:00,16:00',
     elif event != 'workflow_dispatch' or operation not in ('preview', 'apply', 'recover', 'verify', 'monitor-verify'):
         raise ValueError('Unsupported event or operation')
     elif external_window != 'none':
-        if external_window not in WINDOW_CONFIG or operation != 'apply':
+        if external_window not in WINDOW_CONFIG or operation not in ('apply', 'recover'):
             raise ValueError('External trigger must select an approved apply window')
         key = external_window
     if operation == 'recover':
@@ -34,6 +34,8 @@ def resolve(event, schedule='', operation='preview', slots='15:00,16:00',
         if requested_at.tzinfo is None:
             raise ValueError('Trigger timestamp requires timezone')
         local = requested_at.astimezone(TZ)
+        if key:
+            slots = WINDOW_CONFIG[key]['slots']
         requested_slots = slots.split(',')
         if any(not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d', x) for x in requested_slots):
             raise ValueError('Invalid recovery slots')
@@ -42,7 +44,8 @@ def resolve(event, schedule='', operation='preview', slots='15:00,16:00',
             raise ValueError('No future recovery sending slot')
         return dict(operation='apply', slots=slots, deadline=remaining[0],
                     allow_empty='false', start='', expected_date=local.date().isoformat(),
-                    window_key='', window='', include_sent='true')
+                    window_key=(local.date().isoformat() + '-' + key) if key else '',
+                    window=key or '', include_sent='true')
     if key:
         config = WINDOW_CONFIG[key]
         requested_at = requested_at or dt.datetime.now(dt.timezone.utc)

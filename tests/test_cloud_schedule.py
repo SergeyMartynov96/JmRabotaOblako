@@ -38,6 +38,15 @@ class DailyScheduleChecks(unittest.TestCase):
             schedule.resolve('workflow_dispatch', operation='recover', slots='09:00,10:00',
                              requested_at='2026-11-09T05:00:00Z')
 
+    def test_named_recovery_reconciles_entire_window_before_receipt(self):
+        config = schedule.resolve('workflow_dispatch', operation='recover', slots='16:00',
+                                  external_window='morning', requested_at='2026-11-09T04:01:00Z')
+        self.assertEqual(config['slots'], '09:00,10:00')
+        self.assertEqual(config['deadline'], '10:00')
+        self.assertEqual(config['window_key'], '2026-11-09-morning')
+        self.assertEqual(config['window'], 'morning')
+        self.assertEqual(config['include_sent'], 'true')
+
     def test_unknown_schedule_fails_closed(self):
         with self.assertRaises(ValueError):
             schedule.resolve('schedule', '0 0 * * *')
