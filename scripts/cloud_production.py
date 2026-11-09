@@ -148,7 +148,7 @@ def allocate(items, target, top_names):
         if step <= 0 or original % step or original != original.to_integral_value() or step != step.to_integral_value():
             raise Stop('Unsupported fractional or packing schema')
         top = is_top(item['name'], top_names)
-        keep = max(D(2), original * (D('.65') if top else D('.4')))
+        keep = D(2)
         minimum = min(original, (keep / step).to_integral_value(rounding=ROUND_CEILING) * step)
         if item.get('restricted'):
             minimum = max(minimum, D(item['minimum']))
@@ -321,7 +321,8 @@ def pending_slot(status):
     return match.group(1) if match else None
 
 
-def check_budgets(name, headers, rows, groups):
+def budget_forecasts(name, headers, rows, groups):
+    results = []
     if name in ('М42', 'Г34'):
         top_end = next((i for i, h in enumerate(headers) if 'готовая' in h.casefold()), None)
         if top_end is None:
@@ -344,8 +345,70 @@ def check_budgets(name, headers, rows, groups):
             limit = min(limits[0], D(60000)) if name == 'Г34' else limits[0] + D(2000)
             if name == 'Г34' and len(row) > top_end + 1 and headers[top_end + 1].casefold() == 'план' and row[top_end + 1].strip():
                 limit = min(limit, ro.number(row[top_end + 1]))
-            if forecast > limit:
-                raise Stop('Daily forecast exceeds permitted limit')
+            results.append((arrival, forecast, limit))
+    return results
+
+
+def check_budgets(name, headers, rows, groups):
+    if any(forecast > limit for _, forecast, limit in budget_forecasts(name, headers, rows, groups)):
+        raise Stop('Daily forecast exceeds permitted limit')
+
+
+def balance_budgets(name, headers, rows, groups):
+    """Use at most 5% supplier-plan slack to satisfy the hard daily ceiling.
+
+    Sent cards and below-plan originals stay fixed. Legal minima, packing,
+    singles/twos and top priority apply to every additional reduction.
+    """
+    top_names = tops(name) if name in ('М42', 'Г34') else []
+    for arrival, forecast, limit in budget_forecasts(name, headers, rows, groups):
+        end = next(i for i, h in enumerate(headers) if 'готовая' in h.casefold())
+        food_cells = {a1(ri, ci) for ri, row in enumerate(rows)
+                      if len(row) > 1 and row[1] == arrival for ci in range(2, end)}
+        for _ in range(100000):
+            if forecast <= limit:
+                break
+            choices = []
+            for gi, group in enumerate(groups):
+                if group['arrival'] != arrival or group['plan'] is None:
+                    continue
+                # Dessert suppliers are outside this food/Japan budget.
+                if group['cell'] not in food_cells:
+                    continue
+                for ei, entry in enumerate(group['cards']):
+                    desired = entry.get('desired')
+                    if not desired:
+                        continue
+                    for ii, (item, original) in enumerate(zip(desired, entry['items'])):
+                        quantity, step = D(item['quantity']), D(item['packing'])
+                        floor = min(D(original['quantity']),
+                                    (D(2) / step).to_integral_value(rounding=ROUND_CEILING) * step)
+                        if item.get('restricted'):
+                            floor = max(floor, D(item['minimum']))
+                        reduction = step * D(item['price'])
+                        if quantity - step < floor:
+                            continue
+                        if D(group['expected']) - reduction < D(group['plan']) * D('.95'):
+                            continue
+                        minimum = max(D(entry['minimum']),
+                            D(800) if re.search('кумкват|фирсова', group['supplier'], re.I) else D(0))
+                        if total(desired) - reduction < minimum:
+                            continue
+                        loss = (D(original['quantity']) - quantity + step) / D(original['quantity'])
+                        loss *= D(2) if is_top(item['name'], top_names) else D(1)
+                        choices.append((loss, abs(forecast - reduction - limit), gi, ei, ii, reduction))
+            if not choices:
+                raise Stop('Daily budget infeasible within protected quantities and supplier tolerance')
+            _, _, gi, ei, ii, reduction = min(choices)
+            group = groups[gi]
+            item = group['cards'][ei]['desired'][ii]
+            item['quantity'] = str(D(item['quantity']) - D(item['packing']))
+            group['expected'] = str(D(group['expected']) - reduction)
+            group['rounded'] = str(D(group['expected']).quantize(D('1'), rounding=ro.ROUND_HALF_UP))
+            forecast -= reduction
+        else:
+            raise Stop('Daily budget allocation did not converge')
+    check_budgets(name, headers, rows, groups)
 
 
 def check_deadline(now=None):
@@ -361,6 +424,19 @@ def check_deadline(now=None):
         cutoff = dt.datetime.strptime(deadline, '%H:%M').time()
         if now.time().replace(tzinfo=None) >= cutoff:
             raise Stop('Scheduled window is late; reconcile sent requests before retrying')
+
+
+def selected_for_pass(entry, slots, include_sent=False):
+    slot = pending_slot(entry['status'])
+    if slot is not None:
+        return slot in slots
+    return include_sent and bool(re.match(r'^(?:Отправлен|Подтвержд)', entry['status'], re.I))
+
+
+def editable_now(entry, now=None):
+    now = now or dt.datetime.now(ZoneInfo('Asia/Yekaterinburg'))
+    slot = pending_slot(entry['status'])
+    return slot is not None and now.strftime('%H:%M') < slot
 
 
 def prepare(client, browser, context, args):
@@ -383,8 +459,7 @@ def prepare(client, browser, context, args):
         selected = []
         skipped = 0
         for entry in candidates:
-            match = re.search(r'Ожидает отправки\s*\((\d{2}:\d{2})\)', entry['status'])
-            if not match or match.group(1) not in slots:
+            if not selected_for_pass(entry, slots, os.getenv('LIFEMART_INCLUDE_SENT') == 'true'):
                 continue
             if ro.supplier_column(entry['supplier'], sheet.headers) is None:
                 skipped += 1
@@ -393,7 +468,7 @@ def prepare(client, browser, context, args):
             entry.update(arrival=doc.field('Дата привоза заявки'), items=doc.items)
             selected.append(entry)
         groups = {}
-        selected_ids = {x['id'] for x in selected}
+        selected_ids = {x['id'] for x in selected if editable_now(x)}
         for entry in selected:
             key = (ro.supplier_column(entry['supplier'], sheet.headers), entry['arrival'])
             groups.setdefault(key, []).append(entry)
@@ -424,7 +499,7 @@ def prepare(client, browser, context, args):
                     raise Stop('Pending journal differs from current card')
                 if any(entry['before'] == h['after'] for h in prior):
                     recovered.add(entry['id'])
-            if name == 'АВ12':
+            if name == 'АВ12' or not any(x['id'] in selected_ids for x in cards):
                 target = current
                 group['decision'] = 'transfer'
             elif formula.startswith('='):
@@ -460,19 +535,20 @@ def prepare(client, browser, context, args):
                         raise Stop('Supplier minimum would be violated')
                     entry['desired'] = desired
                     entry['after'] = fingerprint(desired)
-                    if entry['after'] != entry['before']:
-                        preview, fresh, _ = open_form(context, client, entry, title)
-                        if fingerprint(fresh) != entry['before']:
-                            raise Stop('Form changed during preflight')
-                        fill_quantities(preview, desired)
-                        preview.close()
             expected = sum((total(e.get('desired', e['items'])) for e in cards), D(0))
             group.update(expected=str(expected), rounded=str(expected.quantize(D('1'), rounding=ro.ROUND_HALF_UP)))
-            for entry in cards:
-                if entry['after'] != entry['before']:
-                    journal['entries'][digest(entry['id'])] = {'before': entry['before'], 'after': entry['after']}
             output['groups'].append(group)
-        check_budgets(name, sheet.headers, sheet.rows, output['groups'])
+        balance_budgets(name, sheet.headers, sheet.rows, output['groups'])
+        for group in output['groups']:
+            for entry in group['cards']:
+                entry['after'] = fingerprint(entry.get('desired', entry['items']))
+                if entry['after'] != entry['before']:
+                    preview, fresh, _ = open_form(context, client, entry, title)
+                    if fingerprint(fresh) != entry['before']:
+                        raise Stop('Form changed during preflight')
+                    fill_quantities(preview, entry['desired'])
+                    preview.close()
+                    journal['entries'][digest(entry['id'])] = {'before': entry['before'], 'after': entry['after']}
         sheet.page.close()
         plan['branches'].append(output)
         changes = sum(e['before'] != e['after'] for g in output['groups'] for e in g['cards'])
@@ -528,6 +604,8 @@ def apply(client, browser, context, args):
                     continue
                 if branch['name'] == 'АВ12':
                     raise Stop('AV12 is strictly transfer-only')
+                if not editable_now(entry):
+                    raise Stop('Request sending slot has passed; reconcile before retrying')
                 page, items, minimum = open_form(context, client, entry, title)
                 if fingerprint(items) != entry['before']:
                     raise Stop('Form changed since preflight')
