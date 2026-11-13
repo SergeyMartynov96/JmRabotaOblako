@@ -130,6 +130,49 @@ class ProductionChecks(unittest.TestCase):
         with self.assertRaises(m.Stop):
             m.check_budgets('М42', headers, rows, groups)
 
+    def report_row(self, ident, branch='Branch'):
+        values = ['', ident, '13.11.2026', '15.11.2026', '', '', branch,
+                  '', 'Supplier', 'На рассмотрении', '', '100']
+        return '<table><tr>' + ''.join('<td>' + x + '</td>' for x in values) + '</tr></table>'
+
+    def test_production_report_reads_all_pages_with_same_filters(self):
+        from unittest.mock import Mock
+        client = Mock()
+        client.request.side_effect = [
+            self.report_row('10200001') + '<a href="?SupplyRequest_page=2">2</a>',
+            self.report_row('10200002') + '<a href="?SupplyRequest_page=1">1</a>'
+        ]
+        rows = m.report(client, 115, 'Branch', '13.11.2026')
+        self.assertEqual([r['id'] for r in rows], ['10200001', '10200002'])
+        calls = client.request.call_args_list
+        self.assertEqual(calls[1].args[0], '/turnover/supplyRequest/report?SupplyRequest_page=2')
+        self.assertEqual(calls[0].args[1], calls[1].args[1])
+        self.assertEqual(calls[1].args[1]['SupplyRequest[department_id][]'], 115)
+
+    def test_production_report_rejects_repeated_page_contents(self):
+        from unittest.mock import Mock
+        client = Mock()
+        client.request.return_value = self.report_row('10200001') + '<a href="?SupplyRequest_page=2">2</a>'
+        with self.assertRaises(m.Stop):
+            m.report(client, 115, 'Branch', '13.11.2026')
+
+    def test_production_report_rejects_foreign_branch_on_later_page(self):
+        from unittest.mock import Mock
+        client = Mock()
+        client.request.side_effect = [
+            self.report_row('10200001') + '<a href="?SupplyRequest_page=2">2</a>',
+            self.report_row('10200002', 'Other branch')]
+        with self.assertRaises(m.Stop):
+            m.report(client, 115, 'Branch', '13.11.2026')
+
+    def test_production_report_never_follows_foreign_pager(self):
+        from unittest.mock import Mock
+        client = Mock()
+        client.request.return_value = '<a href="https://example.com/?SupplyRequest_page=2">2</a>'
+        with self.assertRaises(m.Stop):
+            m.report(client, 115, 'Branch', '13.11.2026')
+        self.assertEqual(client.request.call_count, 1)
+
     def test_a1_beyond_z(self):
         self.assertEqual(m.a1(9, 26), 'AA10')
 

@@ -32,6 +32,11 @@ class ReadOnlyChecks(unittest.TestCase):
         self.assertEqual(match("ИП Фирсова Наталья Александровна", ["ИП Фирсова Н. А."]), 0)
         self.assertIsNone(match("ИП Фирсова", ["Фирсова Наталья", "Фирсова Анна"]))
 
+    def test_distribution_centre_near_surname_is_not_a_local_supplier(self):
+        self.assertIsNone(module.supplier_column('ИП Мухачев Кирилл Сергеевич (РЦ)', ['Мурачев']))
+        self.assertEqual(module.supplier_column('ИП Мурачев Михаил Анатольевич', ['Мурачев']), 0)
+        self.assertEqual(module.supplier_column('ИП Мухачев Кирилл Сергеевич (РЦ)', ['Мухачев']), 0)
+
     def test_slot_and_department_filter(self):
         def row(ident, time, department="Нужный филиал"):
             values = ["", ident, "date", "arrival", "shipment", "", department,

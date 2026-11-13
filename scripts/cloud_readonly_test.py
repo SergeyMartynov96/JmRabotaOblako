@@ -79,6 +79,7 @@ def normalize(value):
 
 
 def supplier_column(supplier, headers):
+    distribution_center = bool(re.search(r"\(\s*РЦ\s*\)", supplier, re.I))
     supplier = normalize(supplier)
     # A whole-word prefix permits an abbreviated surname header, but rejects ambiguity.
     matches = []
@@ -103,6 +104,10 @@ def supplier_column(supplier, headers):
         return previous[-1]
     def surname_key(value):
         return re.sub(r"(ов|ев|ин)а$", r"\1", value)
+    # A distribution-centre counterparty must not become a different personal
+    # supplier through a one-letter surname approximation (Мухачев / Мурачев).
+    if distribution_center:
+        return None
     surname = surname_key(supplier.split()[0]) if supplier else ""
     candidates = []
     for index, header in enumerate(headers):
