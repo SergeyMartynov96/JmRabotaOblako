@@ -11,6 +11,41 @@ def item(ident, name, quantity, price='100', packing='1'):
 
 
 class ProductionChecks(unittest.TestCase):
+    def transfer_plan(self):
+        name, dep, ident, gid = m.active_branches()[0]
+        items = [item(1, 'A', 4)]
+        entry = dict(items=items, before=m.fingerprint(items), after=m.fingerprint(items))
+        return dict(branches=[dict(name=name, department=dep, ident=ident, gid=gid,
+                                  groups=[dict(cards=[entry])])])
+
+    def test_only_av12_is_active_for_automatic_and_manual_runs(self):
+        self.assertEqual([b[0] for b in m.active_branches()], ['АВ12'])
+        m.validate_transfer_plan(self.transfer_plan())
+
+    def test_transfer_plan_rejects_other_branch_before_any_network(self):
+        from unittest.mock import Mock
+        import tempfile, json
+        plan = self.transfer_plan()
+        name, dep, ident, gid = m.ro.BRANCHES[1]
+        plan['branches'].append(dict(name=name, department=dep, ident=ident, gid=gid, groups=[]))
+        client = Mock()
+        with tempfile.NamedTemporaryFile(mode='w+', suffix='.json') as f:
+            json.dump(plan, f); f.flush()
+            with self.assertRaises(m.Stop):
+                m.apply(client, Mock(), Mock(), type('Args', (), {'plan': f.name})())
+        client.request.assert_not_called()
+
+    def test_transfer_rejects_both_declared_and_disguised_request_edits(self):
+        plan = self.transfer_plan()
+        entry = plan['branches'][0]['groups'][0]['cards'][0]
+        entry['after'] = 'different'
+        with self.assertRaises(m.Stop):
+            m.validate_transfer_plan(plan)
+        entry['after'] = entry['before']
+        entry['desired'] = [item(1, 'A', 3)]
+        with self.assertRaises(m.Stop):
+            m.validate_transfer_plan(plan)
+
     def test_real_card_schema_and_total(self):
         doc = m.Card()
         doc.feed('<table><tr><th>Подразделение</th><td>Branch</td></tr><tr>'
@@ -107,6 +142,8 @@ class ProductionChecks(unittest.TestCase):
         review = dict(status='На рассмотрении')
         self.assertTrue(m.selected_for_pass(review, {'10:00'}, True))
         self.assertFalse(m.editable_now(review, now))
+        self.assertTrue(m.selected_for_pass(dict(status='Отгружена'), {'10:00'}, True))
+        self.assertFalse(m.selected_for_pass(dict(status='Агрегирована'), {'10:00'}, True))
         self.assertFalse(m.selected_for_pass(sent, {'10:00'}))
         self.assertFalse(m.selected_for_pass(dict(status='Не отправлено'), {'10:00'}, True))
         self.assertFalse(m.selected_for_pass(dict(status='Отменено'), {'10:00'}, True))

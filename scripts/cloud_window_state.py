@@ -17,7 +17,7 @@ def valid_key(key):
 def is_complete(key, artifacts, get_run, workflow_id):
     valid_key(key)
     for artifact in artifacts:
-        if artifact['name'] != 'lifemart-complete-' + key or artifact.get('expired', False):
+        if artifact['name'] != 'lifemart-av12-complete-' + key or artifact.get('expired', False):
             continue
         run = get_run(artifact['workflow_run']['id'])
         if (run.get('workflow_id') == workflow_id and run.get('status') == 'completed'
@@ -71,7 +71,7 @@ if __name__ == '__main__':
         elif mode == 'write':
             valid_key(key)
             Path('/tmp/lifemart-complete.json').write_text(json.dumps(dict(
-                schema=1, window_key=key, run_id=os.environ['GITHUB_RUN_ID'],
+                schema=1, scope='av12-facts', window_key=key, run_id=os.environ['GITHUB_RUN_ID'],
                 completed_at=dt.datetime.now(dt.timezone.utc).isoformat())))
         else:
             raise ValueError('Invalid receipt operation')

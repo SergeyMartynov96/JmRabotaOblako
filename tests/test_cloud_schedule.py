@@ -17,9 +17,17 @@ class DailyScheduleChecks(unittest.TestCase):
             ('0 9 * * *', '14:00', '15:00,16:00', '15:00'),
         ]:
             config = schedule.resolve('schedule', cron, requested_at='2026-11-09T00:00:00Z')
-            self.assertEqual({k:config[k] for k in ('operation','slots','deadline','allow_empty')}, dict(operation='apply', slots=slots, deadline=deadline, allow_empty='true'))
+            self.assertEqual({k:config[k] for k in ('operation','slots','deadline','allow_empty')}, dict(operation='apply', slots=slots, deadline='', allow_empty='false'))
             minute, hour, *_ = cron.split()
             self.assertEqual(f'{(int(hour) + 5) % 24:02d}:{int(minute):02d}', local)
+
+    def test_late_facts_keep_date_and_include_sent_cards(self):
+        config = schedule.resolve('schedule', '30 3 * * *', requested_at='2026-11-09T12:00:00Z')
+        self.assertEqual(config['deadline'], '')
+        self.assertEqual(config['include_sent'], 'true')
+        self.assertEqual(config['expected_date'], '2026-11-09')
+        self.assertEqual(config['start'], '08:30')
+        self.assertEqual(config['allow_empty'], 'false')
 
     def test_manual_preview_stays_preview(self):
         self.assertEqual(schedule.resolve('workflow_dispatch')['operation'], 'preview')
@@ -30,19 +38,21 @@ class DailyScheduleChecks(unittest.TestCase):
         config = schedule.resolve('workflow_dispatch', operation='recover', slots='09:00,10:00',
                                   requested_at='2026-11-09T04:01:00Z')
         self.assertEqual(config['operation'], 'apply')
-        self.assertEqual(config['deadline'], '10:00')
+        self.assertEqual(config['deadline'], '')
         self.assertEqual(config['expected_date'], '2026-11-09')
         self.assertEqual(config['include_sent'], 'true')
         self.assertEqual(config['window_key'], '')
-        with self.assertRaises(ValueError):
-            schedule.resolve('workflow_dispatch', operation='recover', slots='09:00,10:00',
-                             requested_at='2026-11-09T05:00:00Z')
+        late = schedule.resolve('workflow_dispatch', operation='recover', slots='09:00,10:00',
+                                requested_at='2026-11-09T17:00:00Z')
+        self.assertEqual(late['deadline'], '')
+        self.assertEqual(late['include_sent'], 'true')
+        self.assertEqual(late['expected_date'], '2026-11-09')
 
     def test_named_recovery_reconciles_entire_window_before_receipt(self):
         config = schedule.resolve('workflow_dispatch', operation='recover', slots='16:00',
                                   external_window='morning', requested_at='2026-11-09T04:01:00Z')
         self.assertEqual(config['slots'], '09:00,10:00')
-        self.assertEqual(config['deadline'], '10:00')
+        self.assertEqual(config['deadline'], '')
         self.assertEqual(config['window_key'], '2026-11-09-morning')
         self.assertEqual(config['window'], 'morning')
         self.assertEqual(config['include_sent'], 'true')
