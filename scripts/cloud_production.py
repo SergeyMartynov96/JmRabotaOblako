@@ -463,7 +463,7 @@ def selected_for_pass(entry, slots, include_sent=False):
     if slot is not None:
         return slot in slots
     return include_sent and (entry['status'].strip() == 'На рассмотрении' or
-                             bool(re.match(r'^(?:Отправлен|Подтвержд)', entry['status'], re.I)))
+                             bool(re.match(r'^(?:Отправлен|Подтвержд|Отгружен)', entry['status'], re.I)))
 
 
 def editable_now(entry, now=None):
@@ -472,16 +472,35 @@ def editable_now(entry, now=None):
     return slot is not None and now.strftime('%H:%M') < slot
 
 
+def active_branches():
+    # Current authorization: only AV12 facts, including manual production runs.
+    return tuple(branch for branch in ro.BRANCHES if branch[0] == 'АВ12')
+
+
+def validate_transfer_plan(plan):
+    allowed = active_branches()[0]
+    if len(plan.get('branches', [])) != 1:
+        raise Stop('Only one AV12 transfer branch is authorized')
+    branch = plan['branches'][0]
+    if (branch['name'], branch['department'], branch['ident'], branch['gid']) != allowed:
+        raise Stop('Branch is outside AV12 transfer authorization')
+    for group in branch['groups']:
+        for entry in group['cards']:
+            if (entry['before'] != entry['after'] or
+                    fingerprint(entry.get('desired', entry['items'])) != fingerprint(entry['items'])):
+                raise Stop('Request edits are disabled in AV12 facts mode')
+
+
 def prepare(client, browser, context, args):
     check_deadline()
     date = dt.datetime.now(ZoneInfo('Asia/Yekaterinburg')).date()
-    history = journal_history(args.history)
+    history = {}  # No request saves; old edit journals are unrelated to AV12 facts.
     plan = {'schema': 1, 'date': date.isoformat(), 'created': time.time(), 'branches': []}
     journal = {'schema': 1, 'entries': {}}
     slots = set(args.slots.split(','))
     if not slots or any(not re.fullmatch(r'\d{2}:\d{2}', x) for x in slots):
         raise Stop('Invalid slots')
-    for branch in ro.BRANCHES:
+    for branch in active_branches():
         name, dep, ident, gid = branch
         info = json.loads(client.request(f'/dashboad/api/header?departmentId={dep}'))
         if not info.get('success') or info.get('department_info', {}).get('id') != dep:
@@ -600,9 +619,8 @@ def prepare(client, browser, context, args):
 
 def apply(client, browser, context, args):
     check_deadline()
-    if os.getenv('LIFEMART_JOURNAL_PERSISTED') != 'true':
-        raise Stop('Pending-save journal has not been persisted')
     plan = json.loads(Path(args.plan).read_text())
+    validate_transfer_plan(plan)
     if plan.get('schema') != 1 or time.time() - plan['created'] > 600:
         raise Stop('Plan expired; prepare again')
     if plan['date'] != dt.datetime.now(ZoneInfo('Asia/Yekaterinburg')).date().isoformat():

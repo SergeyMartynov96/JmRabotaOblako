@@ -1,5 +1,5 @@
-name: LifeMart production pass
-run-name: LifeMart ${{ github.event_name == 'schedule' && 'daily apply' || inputs.operation }} (${{ inputs.external_window != 'none' && inputs.external_window || github.event.schedule || inputs.slots }})
+name: LifeMart AV12 facts
+run-name: LifeMart AV12 ${{ github.event_name == 'schedule' && 'daily apply' || inputs.operation }} (${{ inputs.external_window != 'none' && inputs.external_window || github.event.schedule || inputs.slots }})
 on:
   schedule:
     # Asia/Yekaterinburg is UTC+5 throughout the year.
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Preview first; apply saves requests and facts
+        description: AV12 only; apply transfers verified facts, no request edits
         type: choice
         options: [preview, apply, recover, verify, monitor-verify]
         default: preview
@@ -71,16 +71,6 @@ jobs:
         run: |
           python3 -m pip install playwright==1.62.0
           python3 -m playwright install --with-deps chromium
-      - name: Restore pending-save fingerprints
-        if: steps.window.outputs.operation != 'verify' && steps.window.outputs.operation != 'monitor-verify' && steps.completed.outputs.complete != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p /tmp/lifemart-history
-          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[] | select(.name | startswith("lifemart-journal-")) | select(.expired == false) | [.workflow_run.id, .name] | @tsv' > /tmp/lifemart-artifacts.tsv
-          while IFS=$'\t' read -r run_id artifact_name; do
-            gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name "$artifact_name" --dir "/tmp/lifemart-history/$run_id"
-          done < /tmp/lifemart-artifacts.tsv
       - name: Read-only complete preflight
         if: steps.window.outputs.operation != 'verify' && steps.window.outputs.operation != 'monitor-verify' && steps.completed.outputs.complete != 'true'
         env:
@@ -91,18 +81,9 @@ jobs:
           LIFEMART_INCLUDE_SENT: ${{ steps.window.outputs.include_sent }}
           LIFEMART_ALLOW_EMPTY: ${{ steps.window.outputs.allow_empty }}
         run: python3 scripts/cloud_production.py prepare --slots "$REQUEST_SLOTS"
-      - name: Persist fingerprints before any save
-        if: steps.window.outputs.operation == 'apply' && steps.completed.outputs.complete != 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: lifemart-journal-${{ github.run_id }}
-          path: /tmp/lifemart-journal/journal.json
-          if-no-files-found: error
-          retention-days: 90
-      - name: Save and verify requests and facts
+      - name: Transfer and verify AV12 facts
         if: steps.window.outputs.operation == 'apply' && steps.completed.outputs.complete != 'true'
         env:
-          LIFEMART_JOURNAL_PERSISTED: 'true'
           LIFEMART_DEADLINE: ${{ steps.window.outputs.deadline }}
           LIFEMART_WINDOW_START: ${{ steps.window.outputs.start }}
           LIFEMART_EXPECTED_DATE: ${{ steps.window.outputs.expected_date }}
@@ -116,7 +97,7 @@ jobs:
         if: steps.window.outputs.operation == 'apply' && steps.window.outputs.window_key != '' && steps.completed.outputs.complete != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: lifemart-complete-${{ steps.window.outputs.window_key }}
+          name: lifemart-av12-complete-${{ steps.window.outputs.window_key }}
           path: /tmp/lifemart-complete.json
           if-no-files-found: error
           retention-days: 90

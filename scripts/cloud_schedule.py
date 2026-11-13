@@ -39,10 +39,7 @@ def resolve(event, schedule='', operation='preview', slots='15:00,16:00',
         requested_slots = slots.split(',')
         if any(not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d', x) for x in requested_slots):
             raise ValueError('Invalid recovery slots')
-        remaining = sorted(x for x in requested_slots if x > local.strftime('%H:%M'))
-        if not remaining:
-            raise ValueError('No future recovery sending slot')
-        return dict(operation='apply', slots=slots, deadline=remaining[0],
+        return dict(operation='apply', slots=slots, deadline='',
                     allow_empty='false', start='', expected_date=local.date().isoformat(),
                     window_key=(local.date().isoformat() + '-' + key) if key else '',
                     window=key or '', include_sent='true')
@@ -54,11 +51,17 @@ def resolve(event, schedule='', operation='preview', slots='15:00,16:00',
         if requested_at.tzinfo is None:
             raise ValueError('Trigger timestamp requires timezone')
         date = requested_at.astimezone(TZ).date().isoformat()
-        return dict(operation='apply', slots=config['slots'], deadline=config['deadline'],
-                    allow_empty='true', start=config['start'], expected_date=date,
-                    window_key=date + '-' + key, window=key, include_sent='false')
+        return dict(operation='apply', slots=config['slots'], deadline='',
+                    allow_empty='false', start=config['start'], expected_date=date,
+                    window_key=date + '-' + key, window=key, include_sent='true')
+    requested_at = requested_at or dt.datetime.now(dt.timezone.utc)
+    if isinstance(requested_at, str):
+        requested_at = dt.datetime.fromisoformat(requested_at.replace('Z', '+00:00'))
+    if requested_at.tzinfo is None:
+        raise ValueError('Trigger timestamp requires timezone')
     return dict(operation=operation, slots=slots, deadline='', allow_empty='false',
-                start='', expected_date='', window_key='', window='', include_sent='false')
+                start='', expected_date=requested_at.astimezone(TZ).date().isoformat(),
+                window_key='', window='', include_sent='true')
 
 
 if __name__ == '__main__':

@@ -46,10 +46,11 @@ class ExternalScheduleChecks(unittest.TestCase):
 
     def test_only_successful_same_workflow_main_receipt_suppresses_retry(self):
         key = '2026-11-09-morning'
-        artifact = dict(name='lifemart-complete-'+key, expired=False, workflow_run={'id':1})
+        artifact = dict(name='lifemart-av12-complete-'+key, expired=False, workflow_run={'id':1})
         run = dict(workflow_id=42, status='completed', conclusion='success',
                    head_branch='main', event='workflow_dispatch')
         self.assertTrue(state.is_complete(key, [artifact], lambda _:run, 42))
+        self.assertFalse(state.is_complete(key, [dict(artifact, name='lifemart-complete-'+key)], lambda _:run, 42))
         for field, value in [('workflow_id',43), ('status','in_progress'), ('conclusion','failure'),
                              ('head_branch','other'), ('event','pull_request')]:
             self.assertFalse(state.is_complete(key, [artifact], lambda _:dict(run, **{field:value}), 42))
