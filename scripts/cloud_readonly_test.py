@@ -13,6 +13,8 @@ import os
 from pathlib import Path
 import re
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
@@ -160,8 +162,20 @@ class ReadOnlySU:
                 r"/turnover/supplyRequest/view/\d+", parsed.path):
             raise ValueError("Unapproved read endpoint")
         encoded = urllib.parse.urlencode(data).encode() if data is not None else None
-        with self.opener.open(SU + path, encoded, timeout=35) as response:
-            return response.read().decode("utf-8")
+        attempts = 3 if data is None or parsed.path == '/turnover/supplyRequest/report' else 1
+        for attempt in range(attempts):
+            try:
+                with self.opener.open(SU + path, encoded, timeout=35) as response:
+                    return response.read().decode("utf-8")
+            except urllib.error.HTTPError as exc:
+                if exc.code not in (429, 500, 502, 503, 504) or attempt + 1 == attempts:
+                    raise
+            except (TimeoutError, urllib.error.URLError):
+                if attempt + 1 == attempts:
+                    raise
+            # No URLs, remote error text, credentials or request bodies in logs.
+            print('Read-only SU request retry after transient network failure.', flush=True)
+            time.sleep(attempt + 1)
 
     def login(self):
         username, password = credentials()
