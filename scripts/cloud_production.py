@@ -12,6 +12,7 @@ import sys
 import time
 import traceback
 import urllib.request
+import urllib.parse
 from zoneinfo import ZoneInfo
 
 import cloud_readonly_test as ro
@@ -98,19 +99,45 @@ def report(client, dep, title, date, arrival=False):
               'SupplyRequest[date_arrives_from]': '', 'SupplyRequest[date_arrives_to]': '',
               f'SupplyRequest[{field}_from]': date, f'SupplyRequest[{field}_to]': date,
               'SupplyRequest[actual_applications]': '1', 'yt11': 'Сформировать'}
-    doc = ro.Document()
-    doc.feed(client.request('/turnover/supplyRequest/report', params))
-    if any(re.search(r'(?:_page|page)=', link) for link in doc.links):
-        raise Stop('Paginated report; refusing incomplete group')
-    results = []
-    for row in doc.rows:
-        if len(row) < 12 or not re.fullmatch(r'\d{7,12}', row[1]):
+    pending, visited, results, ids = [1], set(), [], set()
+    while pending:
+        page = min(pending)
+        pending.remove(page)
+        if page in visited:
             continue
-        if ro.normalize(row[6]) != ro.normalize(title):
-            raise Stop('Report department mismatch')
-        results.append({'id': row[1], 'supplier': row[8], 'status': row[9]})
-    if len({x['id'] for x in results}) != len(results):
-        raise Stop('Duplicate report IDs')
+        if len(visited) >= 1000:
+            raise Stop('Report pagination limit exceeded')
+        visited.add(page)
+        path = '/turnover/supplyRequest/report'
+        if page != 1:
+            path += '?SupplyRequest_page=' + str(page)
+        doc = ro.Document()
+        # Repeat filters on every page; never follow arbitrary remote URLs.
+        doc.feed(client.request(path, params))
+        for row in doc.rows:
+            if len(row) < 12 or not re.fullmatch(r'\d{7,12}', row[1]):
+                continue
+            if ro.normalize(row[6]) != ro.normalize(title):
+                raise Stop('Report department mismatch')
+            if row[1] in ids:
+                raise Stop('Duplicate report IDs across pages; unstable report')
+            ids.add(row[1])
+            results.append({'id': row[1], 'supplier': row[8], 'status': row[9]})
+        for link in doc.links:
+            parsed = urllib.parse.urlsplit(link)
+            query = urllib.parse.parse_qs(parsed.query)
+            keys = [k for k in query if k == 'page' or k.endswith('_page')]
+            if not keys:
+                continue
+            if (parsed.scheme or parsed.netloc or parsed.path not in ('', '/turnover/supplyRequest/report')
+                    or keys != ['SupplyRequest_page']):
+                raise Stop('Unrecognized report pagination link')
+            values = query[keys[0]]
+            if len(values) != 1 or not re.fullmatch(r'[1-9]\d*', values[0]):
+                raise Stop('Invalid report page')
+            target = int(values[0])
+            if target not in visited and target not in pending:
+                pending.append(target)
     return results
 
 
@@ -212,8 +239,12 @@ class Sheet:
     def locate(self, supplier, arrival):
         col = ro.supplier_column(supplier, self.headers)
         rows = [i for i, r in enumerate(self.rows) if len(r) > 1 and r[1] == arrival]
-        if col is None or len(rows) != 1:
-            raise Stop('Sheet supplier/date ambiguous')
+        if col is None:
+            raise Stop('Sheet supplier column missing or ambiguous')
+        if not rows:
+            raise Stop('Sheet arrival date missing')
+        if len(rows) != 1:
+            raise Stop('Sheet arrival date duplicated')
         row = rows[0]
         header_rows = [i for i, r in enumerate(self.rows) if r == self.headers]
         if len(header_rows) != 1:
