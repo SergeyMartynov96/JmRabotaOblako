@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import sys
 import time
+import traceback
 import urllib.request
 from zoneinfo import ZoneInfo
 
@@ -455,6 +456,7 @@ def prepare(client, browser, context, args):
         if not info.get('success') or info.get('department_info', {}).get('id') != dep:
             raise Stop('Department access failed')
         title = info['department_info']['title']
+        print(f'{name}: opening spreadsheet for read-only preflight', flush=True)
         sheet = Sheet(browser, ident, gid)
         candidates = report(client, dep, title, date.strftime('%d.%m.%Y'))
         selected = []
@@ -684,4 +686,8 @@ if __name__ == '__main__':
     except Exception as exc:
         # Remote error messages can contain business data and credentials.
         print('FAIL: ' + type(exc).__name__ + '; stopped before further changes.', file=sys.stderr)
+        # Frame locations only: exception messages/locals may contain credentials or payloads.
+        for frame in traceback.extract_tb(exc.__traceback__):
+            if Path(frame.filename).parent.name == 'scripts':
+                print(f'TRACE: {Path(frame.filename).name}:{frame.lineno} in {frame.name}', file=sys.stderr)
         sys.exit(1)
