@@ -15,6 +15,38 @@ class ReadOnlyChecks(unittest.TestCase):
             with self.assertRaises(ValueError):
                 client.request(path, {"quantity": 0})
 
+    def test_report_timeout_retries_same_read_without_logging_payload(self):
+        from unittest.mock import Mock, patch
+        import contextlib, io
+        client = module.ReadOnlySU()
+        client.opener = Mock()
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.read.return_value = b'<html>report</html>'
+        client.opener.open.side_effect = [TimeoutError('private payload'), response]
+        output = io.StringIO()
+        with patch.object(module.time, 'sleep'), contextlib.redirect_stdout(output):
+            self.assertEqual(client.request('/turnover/supplyRequest/report', {'date':'today'}), '<html>report</html>')
+        self.assertEqual(client.opener.open.call_args_list[0], client.opener.open.call_args_list[1])
+        self.assertNotIn('private payload', output.getvalue())
+        self.assertNotIn('today', output.getvalue())
+
+    def test_report_retries_are_bounded_and_client_errors_are_not_retried(self):
+        from unittest.mock import Mock, patch
+        import urllib.error
+        client = module.ReadOnlySU()
+        client.opener = Mock()
+        client.opener.open.side_effect = TimeoutError()
+        with patch.object(module.time, 'sleep'), self.assertRaises(TimeoutError):
+            client.request('/turnover/supplyRequest/report', {})
+        self.assertEqual(client.opener.open.call_count, 3)
+        client.opener.reset_mock()
+        client.opener.open.side_effect = urllib.error.HTTPError('url',403,'private',{},None)
+        with self.assertRaises(urllib.error.HTTPError):
+            client.request('/turnover/supplyRequest/report', {})
+        self.assertEqual(client.opener.open.call_count, 1)
+
     def test_only_known_suppliers_match(self):
         headers = ["Дата", "Мамадалиев", "Маматулин", "Кисель"]
         self.assertEqual(module.supplier_column("ИП Маматулин Данис Маратович", headers), 2)
