@@ -72,7 +72,7 @@ def card(client, ident, title, supplier, arrival=None):
     doc.feed(client.request('/turnover/supplyRequest/view/' + ident))
     if ro.normalize(doc.field('Подразделение')) != ro.normalize(title):
         raise Stop('Card branch changed')
-    if ro.normalize(doc.field('Поставщик')) != ro.normalize(supplier):
+    if ro.supplier_identity(doc.field('Поставщик')) != ro.supplier_identity(supplier):
         raise Stop('Card supplier changed')
     if arrival and doc.field('Дата привоза заявки') != arrival:
         raise Stop('Card arrival changed')

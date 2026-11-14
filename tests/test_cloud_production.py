@@ -46,6 +46,39 @@ class ProductionChecks(unittest.TestCase):
         with self.assertRaises(m.Stop):
             m.validate_transfer_plan(plan)
 
+    def supplier_card(self, supplier, branch='Branch'):
+        return ('<table><tr><th>Подразделение</th><td>' + branch + '</td></tr>'
+                '<tr><th>Поставщик</th><td>' + supplier + '</td></tr>'
+                '<tr><td class="supply-nomenclature" data-id="1">Food</td>'
+                '<td class="supply-totla-count">2.000</td>'
+                '<td class="supply-package-volume">1</td>'
+                '<td class="supply-item-price">100</td>'
+                '<td class="supply-total-price">200</td></tr></table>')
+
+    def test_same_request_supplier_accepts_rc_report_marker(self):
+        from unittest.mock import Mock
+        client = Mock()
+        client.request.return_value = self.supplier_card('ЗАВОД ЕКБ')
+        doc = m.card(client, '10274061', 'Branch', 'ЗАВОД ЕКБ (РЦ)')
+        self.assertEqual(m.total(doc.items), D(200))
+
+    def test_rc_marker_does_not_merge_different_suppliers(self):
+        from unittest.mock import Mock
+        client = Mock()
+        client.request.return_value = self.supplier_card('ИП Мухачев Кирилл Сергеевич')
+        with self.assertRaises(m.Stop):
+            m.card(client, '10274061', 'Branch', 'ИП Мурачев Михаил Анатольевич (РЦ)')
+
+    def test_rc_supplier_still_checks_branch_and_totals(self):
+        from unittest.mock import Mock
+        client = Mock()
+        client.request.return_value = self.supplier_card('ЗАВОД ЕКБ', branch='Other')
+        with self.assertRaises(m.Stop):
+            m.card(client, '10274061', 'Branch', 'ЗАВОД ЕКБ (РЦ)')
+        client.request.return_value = self.supplier_card('ЗАВОД ЕКБ').replace('>200<', '>201<')
+        with self.assertRaises(m.Stop):
+            m.card(client, '10274061', 'Branch', 'ЗАВОД ЕКБ (РЦ)')
+
     def test_real_card_schema_and_total(self):
         doc = m.Card()
         doc.feed('<table><tr><th>Подразделение</th><td>Branch</td></tr><tr>'
