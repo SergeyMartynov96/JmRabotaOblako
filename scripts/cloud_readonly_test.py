@@ -80,6 +80,13 @@ def normalize(value):
     return re.sub(r"[^а-яa-z0-9]+", " ", value).strip()
 
 
+
+def supplier_identity(value):
+    # Report counterparty labels can add an RC channel marker which is absent
+    # from the same request's supplier field. Do not approximate other names.
+    return normalize(re.sub(r'\s*\(\s*РЦ\s*\)\s*$', '', value, flags=re.I))
+
+
 def supplier_column(supplier, headers):
     distribution_center = bool(re.search(r"\(\s*РЦ\s*\)", supplier, re.I))
     supplier = normalize(supplier)
