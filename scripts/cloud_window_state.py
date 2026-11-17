@@ -8,16 +8,23 @@ import urllib.request
 
 
 def valid_key(key):
-    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}-(morning|midday|afternoon)', key):
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}-(morning|midday|afternoon|endofday)', key):
         raise ValueError('Invalid window key')
     dt.date.fromisoformat(key[:10])
     return key
 
 
+def receipt_prefix():
+    scope = os.getenv('LIFEMART_SCOPE', 'АВ12')
+    if scope not in ('АВ12', 'К44'):
+        raise ValueError('Invalid receipt scope')
+    return 'lifemart-' + ('av12' if scope == 'АВ12' else 'k44') + '-complete-'
+
+
 def is_complete(key, artifacts, get_run, workflow_id):
     valid_key(key)
     for artifact in artifacts:
-        if artifact['name'] != 'lifemart-av12-complete-' + key or artifact.get('expired', False):
+        if artifact['name'] != receipt_prefix() + key or artifact.get('expired', False):
             continue
         run = get_run(artifact['workflow_run']['id'])
         if (run.get('workflow_id') == workflow_id and run.get('status') == 'completed'
@@ -71,7 +78,7 @@ if __name__ == '__main__':
         elif mode == 'write':
             valid_key(key)
             Path('/tmp/lifemart-complete.json').write_text(json.dumps(dict(
-                schema=1, scope='av12-facts', window_key=key, run_id=os.environ['GITHUB_RUN_ID'],
+                schema=1, scope=('k44-facts' if os.getenv('LIFEMART_SCOPE') == 'К44' else 'av12-facts'), window_key=key, run_id=os.environ['GITHUB_RUN_ID'],
                 completed_at=dt.datetime.now(dt.timezone.utc).isoformat())))
         else:
             raise ValueError('Invalid receipt operation')

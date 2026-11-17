@@ -129,7 +129,11 @@ def supplier_column(supplier, headers):
                and not (len(b) == 1 and a.startswith(b))
                for a, b in zip(given, words[1:])):
             continue
-        if distance(surname, surname_key(words[0])) <= 1:
+        other = surname_key(words[0])
+        transposition = len(surname) == len(other) and any(
+            surname == other[:i] + other[i+1] + other[i] + other[i+2:]
+            for i in range(len(other)-1))
+        if distance(surname, other) <= 1 or transposition:
             candidates.append(index)
     return candidates[0] if len(candidates) == 1 else None
 

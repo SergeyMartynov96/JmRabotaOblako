@@ -472,27 +472,55 @@ def editable_now(entry, now=None):
     return slot is not None and now.strftime('%H:%M') < slot
 
 
+K44_BRANCH = ('К44', 140, '17RaOtwXEzD6X6nhHgRRlCj1xKaasKqZA7V22R-V8WC0', '293705136')
+
+
 def active_branches():
-    # Current authorization: only AV12 facts, including manual production runs.
-    return tuple(branch for branch in ro.BRANCHES if branch[0] == 'АВ12')
+    scope = os.getenv('LIFEMART_SCOPE', 'АВ12')
+    if scope == 'К44':
+        return (K44_BRANCH,)
+    if scope == 'АВ12':
+        return tuple(branch for branch in ro.BRANCHES if branch[0] == 'АВ12')
+    raise Stop('Unauthorized transfer scope')
+
+
+def check_transfer_time(preview=False, now=None):
+    if active_branches()[0][0] == 'К44' and not preview:
+        now = now or dt.datetime.now(ZoneInfo('Asia/Yekaterinburg'))
+        if now.hour < 16:
+            raise Stop('K44 facts are transferred only after 16:00 Yekaterinburg')
+
+
+def k44_candidate(entry, headers, preview=False):
+    if ro.supplier_column(entry['supplier'], headers) is None:
+        return False
+    if pending_slot(entry['status']) is not None:
+        if preview:
+            return True
+        raise Stop('K44 supplier still awaiting sending; retry after all are sent')
+    if not selected_for_pass(entry, set(), True):
+        raise Stop('K44 request status not confirmed for fact transfer')
+    return True
 
 
 def validate_transfer_plan(plan):
     allowed = active_branches()[0]
     if len(plan.get('branches', [])) != 1:
-        raise Stop('Only one AV12 transfer branch is authorized')
+        raise Stop('Only one configured transfer branch is authorized')
     branch = plan['branches'][0]
     if (branch['name'], branch['department'], branch['ident'], branch['gid']) != allowed:
-        raise Stop('Branch is outside AV12 transfer authorization')
+        raise Stop('Branch is outside configured transfer authorization')
     for group in branch['groups']:
         for entry in group['cards']:
             if (entry['before'] != entry['after'] or
                     fingerprint(entry.get('desired', entry['items'])) != fingerprint(entry['items'])):
-                raise Stop('Request edits are disabled in AV12 facts mode')
+                raise Stop('Request edits are disabled in facts mode')
 
 
 def prepare(client, browser, context, args):
     check_deadline()
+    preview = os.getenv('LIFEMART_PREVIEW') == 'true'
+    check_transfer_time(preview=preview)
     date = dt.datetime.now(ZoneInfo('Asia/Yekaterinburg')).date()
     history = {}  # No request saves; old edit journals are unrelated to AV12 facts.
     plan = {'schema': 1, 'date': date.isoformat(), 'created': time.time(), 'branches': []}
@@ -512,11 +540,16 @@ def prepare(client, browser, context, args):
         selected = []
         skipped = 0
         for entry in candidates:
-            if not selected_for_pass(entry, slots, os.getenv('LIFEMART_INCLUDE_SENT') == 'true'):
-                continue
-            if ro.supplier_column(entry['supplier'], sheet.headers) is None:
-                skipped += 1
-                continue
+            if name == 'К44':
+                if not k44_candidate(entry, sheet.headers, preview=preview):
+                    skipped += 1
+                    continue
+            else:
+                if not selected_for_pass(entry, slots, os.getenv('LIFEMART_INCLUDE_SENT') == 'true'):
+                    continue
+                if ro.supplier_column(entry['supplier'], sheet.headers) is None:
+                    skipped += 1
+                    continue
             doc = card(client, entry['id'], title, entry['supplier'])
             entry.update(arrival=doc.field('Дата привоза заявки'), items=doc.items)
             selected.append(entry)
@@ -552,7 +585,7 @@ def prepare(client, browser, context, args):
                     raise Stop('Pending journal differs from current card')
                 if any(entry['before'] == h['after'] for h in prior):
                     recovered.add(entry['id'])
-            if name == 'АВ12' or not any(x['id'] in selected_ids for x in cards):
+            if name in ('АВ12', 'К44') or not any(x['id'] in selected_ids for x in cards):
                 target = current
                 group['decision'] = 'transfer'
             elif formula.startswith('='):
@@ -569,7 +602,7 @@ def prepare(client, browser, context, args):
             fixed = D(0)
             for entry in cards:
                 entry['after'] = entry['before']
-                if entry['id'] not in selected_ids or name == 'АВ12' or entry['id'] in recovered or target >= current:
+                if entry['id'] not in selected_ids or name in ('АВ12', 'К44') or entry['id'] in recovered or target >= current:
                     fixed += total(entry['items'])
                     continue
                 page, items, minimum = open_form(context, client, entry, title)
@@ -619,6 +652,7 @@ def prepare(client, browser, context, args):
 
 def apply(client, browser, context, args):
     check_deadline()
+    check_transfer_time()
     plan = json.loads(Path(args.plan).read_text())
     validate_transfer_plan(plan)
     if plan.get('schema') != 1 or time.time() - plan['created'] > 600:
@@ -629,6 +663,10 @@ def apply(client, browser, context, args):
         title = branch['title']
         client.request(f'/dashboad/api/header?departmentId={branch["department"]}')
         sheet = Sheet(browser, branch['ident'], branch['gid'])
+        if branch['name'] == 'К44':
+            today = dt.datetime.now(ZoneInfo('Asia/Yekaterinburg')).strftime('%d.%m.%Y')
+            for entry in report(client, branch['department'], title, today):
+                k44_candidate(entry, sheet.headers)
         changed = written = 0
         for group in branch['groups']:
             check_deadline()
