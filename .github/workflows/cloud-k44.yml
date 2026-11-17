@@ -43,7 +43,7 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > /tmp/lifemart-run.json
           python3 scripts/cloud_k44_schedule.py
       - name: Verify safety, allocation and matching
-        run: python3 -m unittest discover -s tests -v
+        run: LIFEMART_SCOPE=АВ12 python3 -m unittest discover -s tests -v
       - name: Check completed sending window
         id: completed
         env:
