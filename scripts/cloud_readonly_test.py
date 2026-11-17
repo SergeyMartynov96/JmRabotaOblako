@@ -173,7 +173,7 @@ class ReadOnlySU:
                 r"/turnover/supplyRequest/view/\d+", parsed.path):
             raise ValueError("Unapproved read endpoint")
         encoded = urllib.parse.urlencode(data).encode() if data is not None else None
-        attempts = 3 if data is None or parsed.path == '/turnover/supplyRequest/report' else 1
+        attempts = 3  # Only read endpoints and same-credential login passed the allowlist above.
         for attempt in range(attempts):
             try:
                 with self.opener.open(SU + path, encoded, timeout=35) as response:

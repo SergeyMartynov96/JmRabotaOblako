@@ -15,6 +15,27 @@ class ReadOnlyChecks(unittest.TestCase):
             with self.assertRaises(ValueError):
                 client.request(path, {"quantity": 0})
 
+    def test_login_timeout_repeats_same_credentials_but_not_auth_failure(self):
+        from unittest.mock import Mock, patch
+        client = module.ReadOnlySU()
+        client.opener = Mock()
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.read.return_value = b'<html>signed in</html>'
+        client.opener.open.side_effect = [response, TimeoutError(), response]
+        with patch.object(module,'credentials',return_value=('test','not-a-real-password')), patch.object(module.time,'sleep'):
+            client.login()
+        self.assertEqual(client.opener.open.call_count,3)
+        self.assertEqual(client.opener.open.call_args_list[1],client.opener.open.call_args_list[2])
+        client.opener.reset_mock()
+        client.opener.open.side_effect = None
+        client.opener.open.return_value = response
+        response.read.return_value = b'LoginForm[password]'
+        with patch.object(module,'credentials',return_value=('test','not-a-real-password')), self.assertRaises(RuntimeError):
+            client.login()
+        self.assertEqual(client.opener.open.call_count,2)
+
     def test_report_timeout_retries_same_read_without_logging_payload(self):
         from unittest.mock import Mock, patch
         import contextlib, io
