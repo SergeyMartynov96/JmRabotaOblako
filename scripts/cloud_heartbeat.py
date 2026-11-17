@@ -19,7 +19,7 @@ def validate(url):
 
 
 def cronitor_url(window, token, environment='production'):
-    if window not in WINDOWS + ('k44',) or not re.fullmatch(r'[a-zA-Z0-9_-]{16,128}', token):
+    if window not in WINDOWS + ('k44', 'x76') or not re.fullmatch(r'[a-zA-Z0-9_-]{16,128}', token):
         raise ValueError('Invalid Cronitor completion configuration')
     if environment not in ('production', 'setup-test'):
         raise ValueError('Invalid monitor environment')
@@ -45,7 +45,7 @@ def cronitor_ping(window, token, environment='production'):
 
 
 def ping(window):
-    if window not in WINDOWS + ('k44',):
+    if window not in WINDOWS + ('k44', 'x76'):
         raise ValueError('Invalid monitor window')
     token = os.getenv('CRONITOR_TELEMETRY_KEY', '')
     if token:

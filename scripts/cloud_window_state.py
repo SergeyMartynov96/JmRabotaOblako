@@ -16,9 +16,9 @@ def valid_key(key):
 
 def receipt_prefix():
     scope = os.getenv('LIFEMART_SCOPE', 'АВ12')
-    if scope not in ('АВ12', 'К44'):
+    if scope not in ('АВ12', 'К44', 'Х76'):
         raise ValueError('Invalid receipt scope')
-    return 'lifemart-' + ('av12' if scope == 'АВ12' else 'k44') + '-complete-'
+    return 'lifemart-' + {'АВ12':'av12', 'К44':'k44', 'Х76':'x76'}[scope] + '-complete-'
 
 
 def is_complete(key, artifacts, get_run, workflow_id):
@@ -78,7 +78,7 @@ if __name__ == '__main__':
         elif mode == 'write':
             valid_key(key)
             Path('/tmp/lifemart-complete.json').write_text(json.dumps(dict(
-                schema=1, scope=('k44-facts' if os.getenv('LIFEMART_SCOPE') == 'К44' else 'av12-facts'), window_key=key, run_id=os.environ['GITHUB_RUN_ID'],
+                schema=1, scope=receipt_prefix().removeprefix('lifemart-').removesuffix('-complete-') + '-facts', window_key=key, run_id=os.environ['GITHUB_RUN_ID'],
                 completed_at=dt.datetime.now(dt.timezone.utc).isoformat())))
         else:
             raise ValueError('Invalid receipt operation')

@@ -472,6 +472,10 @@ def editable_now(entry, now=None):
     return slot is not None and now.strftime('%H:%M') < slot
 
 
+X76_BRANCH = ('Х76', 401, '17RaOtwXEzD6X6nhHgRRlCj1xKaasKqZA7V22R-V8WC0', '580030514')
+X76_START_DATE = dt.date(2026, 11, 18)
+EVENING_SCOPES = ('К44', 'Х76')
+
 K44_BRANCH = ('К44', 140, '17RaOtwXEzD6X6nhHgRRlCj1xKaasKqZA7V22R-V8WC0', '293705136')
 
 
@@ -479,16 +483,21 @@ def active_branches():
     scope = os.getenv('LIFEMART_SCOPE', 'АВ12')
     if scope == 'К44':
         return (K44_BRANCH,)
+    if scope == 'Х76':
+        return (X76_BRANCH,)
     if scope == 'АВ12':
         return tuple(branch for branch in ro.BRANCHES if branch[0] == 'АВ12')
     raise Stop('Unauthorized transfer scope')
 
 
 def check_transfer_time(preview=False, now=None):
-    if active_branches()[0][0] == 'К44' and not preview:
+    scope = active_branches()[0][0]
+    if scope in EVENING_SCOPES and not preview:
         now = now or dt.datetime.now(ZoneInfo('Asia/Yekaterinburg'))
+        if scope == 'Х76' and now.date() < X76_START_DATE:
+            raise Stop('X76 production starts on 18 November 2026')
         if now.hour < 16:
-            raise Stop('K44 facts are transferred only after 16:00 Yekaterinburg')
+            raise Stop('Evening facts are transferred only after 16:00 Yekaterinburg')
 
 
 def k44_candidate(entry, headers, preview=False):
@@ -497,9 +506,9 @@ def k44_candidate(entry, headers, preview=False):
     if pending_slot(entry['status']) is not None:
         if preview:
             return True
-        raise Stop('K44 supplier still awaiting sending; retry after all are sent')
+        raise Stop('Evening supplier still awaiting sending; retry after all are sent')
     if not selected_for_pass(entry, set(), True):
-        raise Stop('K44 request status not confirmed for fact transfer')
+        raise Stop('Evening request status not confirmed for fact transfer')
     return True
 
 
@@ -540,7 +549,7 @@ def prepare(client, browser, context, args):
         selected = []
         skipped = 0
         for entry in candidates:
-            if name == 'К44':
+            if name in EVENING_SCOPES:
                 if not k44_candidate(entry, sheet.headers, preview=preview):
                     skipped += 1
                     continue
@@ -585,7 +594,7 @@ def prepare(client, browser, context, args):
                     raise Stop('Pending journal differs from current card')
                 if any(entry['before'] == h['after'] for h in prior):
                     recovered.add(entry['id'])
-            if name in ('АВ12', 'К44') or not any(x['id'] in selected_ids for x in cards):
+            if name in ('АВ12', 'К44', 'Х76') or not any(x['id'] in selected_ids for x in cards):
                 target = current
                 group['decision'] = 'transfer'
             elif formula.startswith('='):
@@ -602,7 +611,7 @@ def prepare(client, browser, context, args):
             fixed = D(0)
             for entry in cards:
                 entry['after'] = entry['before']
-                if entry['id'] not in selected_ids or name in ('АВ12', 'К44') or entry['id'] in recovered or target >= current:
+                if entry['id'] not in selected_ids or name in ('АВ12', 'К44', 'Х76') or entry['id'] in recovered or target >= current:
                     fixed += total(entry['items'])
                     continue
                 page, items, minimum = open_form(context, client, entry, title)
@@ -663,7 +672,7 @@ def apply(client, browser, context, args):
         title = branch['title']
         client.request(f'/dashboad/api/header?departmentId={branch["department"]}')
         sheet = Sheet(browser, branch['ident'], branch['gid'])
-        if branch['name'] == 'К44':
+        if branch['name'] in EVENING_SCOPES:
             today = dt.datetime.now(ZoneInfo('Asia/Yekaterinburg')).strftime('%d.%m.%Y')
             for entry in report(client, branch['department'], title, today):
                 k44_candidate(entry, sheet.headers)
