@@ -1,2 +1,10 @@
 __pycache__/
 *.pyc
+
+# Local credentials must not be committed.
+.env
+.env.*
+!.env.example
+.secrets/
+credentials*.json
+*.cookies
