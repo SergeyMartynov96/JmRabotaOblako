@@ -29,8 +29,9 @@ def csv_sheet(book,gid):
 
 def tops_sheet(book,day):
     html=get(f'https://docs.google.com/spreadsheets/d/{book}/htmlview')
-    sheets=[]
+    sheets=[];recognized=0
     for match in re.finditer(r'items\.push\(\{name: ("(?:\\.|[^"\\])*"),.*?gid: "(-?\d+)"',html):
+        recognized+=1
         title=json.loads(match[1]);gid=match[2]
         if MONTHS[day.month-1] in title.casefold() and str(day.year) in title:
             sheets.append((2,0,gid))
@@ -40,7 +41,8 @@ def tops_sheet(book,day):
             start=dt.date(day.year,int(m[2]),int(m[1]))
             if start<=day:sheets.append((1,start.toordinal(),gid))
     if not sheets:
-        raise StructureError('Current tops tab not found')
+        if recognized:return None  # Valid workbook, but period not prepared by store.
+        raise StructureError('Tops workbook structure unavailable')
     sheets.sort(reverse=True)
     if len(sheets)>1 and sheets[0][:2]==sheets[1][:2]:
         raise StructureError('Current tops tab ambiguous')

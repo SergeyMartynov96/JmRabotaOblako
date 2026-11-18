@@ -75,6 +75,8 @@ def procurement(rows, day):
 
 def tops(rows, day):
     """Each of the first three product blocks ends in the supplied availability total."""
+    if rows is None:
+        return [DASH]*3
     groups = []
     start = None
     for r,row in enumerate(rows):

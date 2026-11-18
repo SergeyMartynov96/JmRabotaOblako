@@ -23,6 +23,8 @@ class MetricsRules(unittest.TestCase):
     def test_explicit_zero_versus_unfilled(self):
         self.assertEqual(tops(self.blocks(('0','0'),'0'),DAY),['100']*3)
         self.assertEqual(tops(self.blocks(('',''),'0'),DAY),[DASH]*3)
+    def test_missing_tops_period_is_business_missing_data(self):
+        self.assertEqual(tops(None,DAY),[DASH]*3)
     def test_full_availability_is_zero_absence(self):
         self.assertEqual(tops(self.blocks(('1','1'),'100'),DAY),['0']*3)
     def test_invalid_top_percentage_not_silently_used(self):
