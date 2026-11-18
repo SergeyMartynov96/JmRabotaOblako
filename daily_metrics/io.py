@@ -5,6 +5,7 @@ import io
 import json
 import os
 import re
+import time
 import urllib.parse
 import urllib.request
 from .core import StructureError, MONTHS
@@ -20,7 +21,7 @@ def get(url):
 
 
 def csv_sheet(book,gid):
-    raw=get(f'https://docs.google.com/spreadsheets/d/{book}/export?format=csv&gid={gid}')
+    raw=get(f'https://docs.google.com/spreadsheets/d/{book}/export?format=csv&gid={gid}&cachebust={time.time_ns()}')
     if raw.lstrip().startswith('<'):
         raise StructureError('Sheet CSV unavailable')
     return list(csv.reader(io.StringIO(raw)))
