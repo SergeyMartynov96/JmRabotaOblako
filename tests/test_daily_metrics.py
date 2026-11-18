@@ -74,3 +74,21 @@ class BlankOnlyWrite(unittest.TestCase):
         from daily_metrics.io import RevenueSheet
         sheet=object.__new__(RevenueSheet);sheet.allowed={'C5'}
         with self.assertRaises(StructureError):sheet.put_blank('V17','999')
+
+class SharedRevenueReport(unittest.TestCase):
+    def test_three_stores_use_one_report(self):
+        from daily_metrics.io import SUReports,REVENUE
+        from daily_metrics.config import BRANCHES
+        from unittest.mock import Mock
+        client=SUReports();client.request=Mock(return_value='report')
+        for branch in BRANCHES:self.assertEqual(client.revenue(branch,DAY),'report')
+        client.request.assert_called_once()
+        self.assertEqual(client.request.call_args.args[1]['department[]'],['115','153','357'])
+    def test_failed_report_is_not_repeated_for_other_stores(self):
+        from daily_metrics.io import SUReports
+        from daily_metrics.config import BRANCHES
+        from unittest.mock import Mock
+        client=SUReports();client.request=Mock(side_effect=TimeoutError())
+        for branch in BRANCHES:
+            with self.assertRaises(TimeoutError):client.revenue(branch,DAY)
+        client.request.assert_called_once()

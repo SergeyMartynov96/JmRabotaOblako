@@ -52,11 +52,12 @@ def tops_sheet(book,day):
 class SUReports:
     def __init__(self):
         self.opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        self.revenue_cache={}
     def request(self,path,data=None):
         if urllib.parse.urlsplit(path).path not in ('/site/login',REVENUE,WRITEOFF):
             raise ValueError('Only metrics read endpoints allowed')
         encoded=urllib.parse.urlencode(data,doseq=True).encode() if data is not None else None
-        with self.opener.open(SU+path,encoded,timeout=60) as response:
+        with self.opener.open(SU+path,encoded,timeout=180 if path==REVENUE else 60) as response:
             result=response.read().decode()
         if path!='/site/login' and 'LoginForm[password]' in result:
             raise StructureError('SU session expired')
@@ -78,9 +79,17 @@ class SUReports:
         if 'LoginForm[password]' in html:
             raise StructureError('SU login failed')
     def revenue(self,branch,day):
-        return self.request(REVENUE,{'department[]':[str(branch.department)],'brandId':'','format':'1',
-            'date_s':day.strftime('%d.%m.%Y'),'date_do':day.strftime('%d.%m.%Y'),
-            'day_of_week[]':['all'],'night':'2'})
+        # One report with all three selected stores, matching the owner's manual workflow.
+        # A failed request is not repeated for each branch in this same run.
+        if day not in self.revenue_cache:
+            try:
+                self.revenue_cache[day]=self.request(REVENUE,{'department[]':['115','153','357'],
+                    'brandId':'','format':'1','date_s':day.strftime('%d.%m.%Y'),
+                    'date_do':day.strftime('%d.%m.%Y'),'day_of_week[]':['all'],'night':'2'})
+            except Exception as exc:self.revenue_cache[day]=exc
+        result=self.revenue_cache[day]
+        if isinstance(result,Exception):raise result
+        return result
     def writeoff(self,branch,day):
         params={'WriteOffAct[create_date_from]':day.strftime('%d.%m.%Y'),
             'WriteOffAct[create_date_to]':day.strftime('%d.%m.%Y'),
