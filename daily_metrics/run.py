@@ -115,7 +115,9 @@ def main():
     summary={'date':day.isoformat(),'operation':args.operation,'written':0,'planned':0,'preserved':0,'missing':0,'errors':[]}
     client=SUReports()
     try:client.login()
-    except Exception:raise SystemExit('SU login failed; no cells changed') from None
+    except Exception:
+        summary['errors'].append('SU login failed; revenue/writeoff unavailable')
+        client=None  # Continue independent Sheets sources even when SU is unavailable.
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         browser=pw.chromium.launch(headless=True)
