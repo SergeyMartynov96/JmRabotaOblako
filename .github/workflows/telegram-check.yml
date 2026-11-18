@@ -1,0 +1,49 @@
+name: Telegram connection check
+run-name: Telegram bot connection check (read-only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    steps:
+      - name: Validate token and private Start without sending messages
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.parse, urllib.error
+          token=os.getenv('TELEGRAM_BOT_TOKEN','')
+          result={'secret_configured':bool(token),'token_valid':False,'start_received_in_private_chat':False}
+          def api(method,params=None):
+              data=urllib.parse.urlencode(params or {}).encode()
+              with urllib.request.urlopen('https://api.telegram.org/bot'+token+'/'+method,data,timeout=25) as response:
+                  payload=json.load(response)
+              if not payload.get('ok'):
+                  raise RuntimeError('Telegram API did not accept request')
+              return payload['result']
+          if token:
+              try:
+                  me=api('getMe')
+                  result['token_valid']=bool(me.get('is_bot'))
+                  webhook=api('getWebhookInfo')
+                  result['webhook_configured']=bool(webhook.get('url'))
+                  if not result['webhook_configured']:
+                      updates=api('getUpdates',{'timeout':0,'limit':100,'allowed_updates':json.dumps(['message'])})
+                      private_starts={entry['message']['chat']['id'] for entry in updates
+                          if entry.get('message',{}).get('chat',{}).get('type')=='private'
+                          and entry['message'].get('text','').split(' ',1)[0]=='/start'}
+                      result['start_received_in_private_chat']=bool(private_starts)
+                      result['private_start_chats']=len(private_starts)
+              except urllib.error.HTTPError as exc:
+                  result['error']='Telegram HTTP '+str(exc.code)
+              except Exception as exc:
+                  result['error']=type(exc).__name__
+          print(json.dumps(result))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'w') as out:
+              out.write('Telegram connection check: no messages sent, no credential or chat ID displayed.\n\n'+json.dumps(result,indent=2))
+          if not result['token_valid'] or result.get('error'):
+              raise SystemExit(1)
+          PY
