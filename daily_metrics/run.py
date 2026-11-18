@@ -4,6 +4,7 @@ import datetime as dt
 from decimal import Decimal
 import json
 import os
+import shutil
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from .config import BRANCHES
@@ -121,7 +122,7 @@ def main():
         client=None  # Continue independent Sheets sources even when SU is unavailable.
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
-        browser=pw.chromium.launch(headless=True)
+        browser=pw.chromium.launch(headless=True,executable_path=shutil.which('google-chrome'))
         try:
             for branch in BRANCHES:
                 if args.branch not in ('all',branch.name):continue
