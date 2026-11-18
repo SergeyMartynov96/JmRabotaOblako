@@ -220,11 +220,14 @@ def revenue_report(html,title,day=None):
 
 
 def writeoff_report(html,title,day):
+    if re.search(r'WriteOffAct_page(?:=|%3D)[2-9]',html):
+        raise StructureError('Writeoff report paginated; partial total forbidden')
     doc=Report();doc.feed(html)
-    found=[]
+    found=[];recognized=False
     for heading,rows in doc.tables:
         headers=[(i,row) for i,row in enumerate(rows) if any(text(v)=='себестоимость' for v in row)]
         for hi,header in headers:
+            recognized=True
             cost=next(i for i,v in enumerate(header) if text(v)=='себестоимость')
             dep=next((i for i,v in enumerate(header) if text(v)=='подразделение'),None)
             if dep is None:raise StructureError('Writeoff department column missing')
@@ -235,5 +238,6 @@ def writeoff_report(html,title,day):
                     if not date_matches(row[0],day):raise StructureError('Foreign writeoff date')
                     totals.append(number(row[cost]))
             if totals:found.append(money(sum(totals)))
+    if not recognized:raise StructureError('Writeoff table structure missing')
     if len(found)>1:raise StructureError('Duplicate writeoff tables')
     return found[0] if found else DASH

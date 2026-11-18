@@ -31,6 +31,7 @@ def percentage_literal(displayed,target_display):
 
 
 def fill_branch(browser,client,branch,day,apply,summary):
+    print(branch.name+': checking revenue date and blank cells',flush=True)
     sheet=RevenueSheet(browser,branch,day)
     try:
         rows=sheet.refresh()
@@ -61,6 +62,7 @@ def fill_branch(browser,client,branch,day,apply,summary):
             # No need to query a source when all of its destinations are already filled.
             if apply and all(sheet.formula(a1(r,c)) for r,c in targets[metric]):
                 summary['preserved']+=len(targets[metric]);continue
+            print(branch.name+': reading '+metric,flush=True)
             try:metrics[metric]=load()
             except Exception:
                 # A transport/auth/schema failure is a technical error, unlike an empty valid report.

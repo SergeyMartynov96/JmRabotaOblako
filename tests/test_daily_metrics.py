@@ -49,3 +49,26 @@ class MetricsRules(unittest.TestCase):
         self.assertEqual(percentage_literal('6,1','6,10'),'6,1')
 
 if __name__=='__main__':unittest.main()
+
+class BlankOnlyWrite(unittest.TestCase):
+    def test_existing_number_dash_zero_and_formula_are_preserved(self):
+        from daily_metrics.io import RevenueSheet
+        from unittest.mock import Mock
+        for existing in ('123','0','—','=SUM(A1:A2)'):
+            sheet=object.__new__(RevenueSheet)
+            sheet.allowed={'C5'};sheet.anchors={};sheet.formula=Mock(return_value=existing)
+            sheet.page=Mock()
+            self.assertFalse(sheet.put_blank('C5','999'))
+            sheet.page.keyboard.type.assert_not_called()
+    def test_date_movement_blocks_write(self):
+        from daily_metrics.io import RevenueSheet
+        from unittest.mock import Mock
+        sheet=object.__new__(RevenueSheet)
+        sheet.allowed={'C5'};sheet.anchors={'A5':'17.11.2026'}
+        sheet.formula=Mock(return_value='18.11.2026');sheet.page=Mock()
+        with self.assertRaises(StructureError):sheet.put_blank('C5','999')
+        sheet.page.keyboard.type.assert_not_called()
+    def test_procurement_cells_cannot_be_written(self):
+        from daily_metrics.io import RevenueSheet
+        sheet=object.__new__(RevenueSheet);sheet.allowed={'C5'}
+        with self.assertRaises(StructureError):sheet.put_blank('V17','999')
