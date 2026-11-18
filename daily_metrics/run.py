@@ -79,6 +79,7 @@ def fill_branch(browser,client,branch,day,apply,summary):
                 else:
                     if not sheet.formula(a1(r,c)):
                         summary['planned']+=1;summary['missing']+=literal==DASH
+                    else:summary['preserved']+=1
         # Formula E is never edited. Wait for recalculation, copy its DISPLAYED rounded value.
         r,c=lower_writeoff
         if not sheet.formula(a1(r,c)):
