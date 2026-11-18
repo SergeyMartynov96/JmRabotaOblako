@@ -57,7 +57,7 @@ def procurement(rows, day):
         raise StructureError('Procurement date duplicated')
     # Explicit combined total preferred. Otherwise sum ONLY food and Japan totals.
     headers = [(r,c,text(v)) for r,row in enumerate(rows[:6]) for c,v in enumerate(row)]
-    combined = [(r,c) for r,c,t in headers if 'итого' in t and 'готов' in t and 'япон' in t]
+    combined = [(r,c) for r,c,t in headers if ('итого' in t or 'сумма' in t) and 'готов' in t and 'япон' in t]
     if not combined:
         # М42 combined food/Japan sheet labels its combined column "Итого готовая еда".
         food = [(r,c) for r,c,t in headers if 'итого' in t and 'готов' in t]
@@ -103,6 +103,10 @@ def tops(rows, day):
             for c in range(1,len(rows[r])):
                 if date_matches(value(rows,r,c), day, allow_short=True):
                     headers.append((r,c))
+        if not headers:
+            # АВ12 has one shared date/time header for all three vertically stacked blocks.
+            headers=[(r,c) for r in range(groups[0][0]) for c in range(1,len(rows[r]))
+                     if date_matches(value(rows,r,c),day,allow_short=True)]
         if not headers:
             results.append(DASH)
             continue
