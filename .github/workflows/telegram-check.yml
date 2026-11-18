@@ -28,6 +28,7 @@ jobs:
               try:
                   me=api('getMe')
                   result['token_valid']=bool(me.get('is_bot'))
+                  result['bot_username']=me.get('username')
                   webhook=api('getWebhookInfo')
                   result['webhook_configured']=bool(webhook.get('url'))
                   if not result['webhook_configured']:
