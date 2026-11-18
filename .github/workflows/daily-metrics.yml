@@ -1,0 +1,58 @@
+name: LifeMart daily metrics
+run-name: LifeMart metrics ${{ inputs.operation || 'preview' }} (${{ inputs.branch || 'all' }})
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [preview, apply]
+        default: preview
+        required: true
+      branch:
+        type: choice
+        options: [all, АВ12, М42, Г34]
+        default: all
+        required: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: lifemart-daily-metrics
+  cancel-in-progress: false
+jobs:
+  metrics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LIFEMART_LOGIN: ${{ secrets.LIFEMART_LOGIN }}
+      LIFEMART_PASSWORD: ${{ secrets.LIFEMART_PASSWORD }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Validate metrics rules
+        run: python3 -m unittest discover -s tests -p 'test_daily_metrics.py' -v
+      - name: Resolve original run date
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > /tmp/metrics-run.json
+          python3 - <<'PY'
+          import datetime as dt, json, os
+          from zoneinfo import ZoneInfo
+          from pathlib import Path
+          run=json.loads(Path('/tmp/metrics-run.json').read_text())
+          created=dt.datetime.fromisoformat(run['created_at'].replace('Z','+00:00'))
+          day=created.astimezone(ZoneInfo('Asia/Yekaterinburg')).date().isoformat()
+          with open(os.environ['GITHUB_ENV'],'a') as out:
+              out.write('EXPECTED_RUN_DATE='+day+'\n')
+          PY
+      - name: Install browser runtime
+        run: |
+          python3 -m pip install playwright==1.62.0
+          python3 -m playwright install --with-deps chromium
+      - name: Read or fill yesterday metrics
+        env:
+          OPERATION: ${{ inputs.operation || 'preview' }}
+          BRANCH: ${{ inputs.branch || 'all' }}
+        run: python3 -m daily_metrics.run --operation "$OPERATION" --branch "$BRANCH"
