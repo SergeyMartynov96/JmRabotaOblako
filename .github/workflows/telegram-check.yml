@@ -33,9 +33,11 @@ jobs:
                   result['webhook_configured']=bool(webhook.get('url'))
                   if not result['webhook_configured']:
                       updates=api('getUpdates',{'timeout':0,'limit':100,'allowed_updates':json.dumps(['message'])})
+                      result['updates_returned']=len(updates)
+                      result['private_messages']=sum(entry.get('message',{}).get('chat',{}).get('type')=='private' for entry in updates)
                       private_starts={entry['message']['chat']['id'] for entry in updates
                           if entry.get('message',{}).get('chat',{}).get('type')=='private'
-                          and entry['message'].get('text','').split(' ',1)[0]=='/start'}
+                          and entry['message'].get('text','').strip().split('@',1)[0].split(' ',1)[0]=='/start'}
                       result['start_received_in_private_chat']=bool(private_starts)
                       result['private_start_chats']=len(private_starts)
               except urllib.error.HTTPError as exc:
