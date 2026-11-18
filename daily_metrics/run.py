@@ -64,9 +64,9 @@ def fill_branch(browser,client,branch,day,apply,summary):
                 summary['preserved']+=len(targets[metric]);continue
             print(branch.name+': reading '+metric,flush=True)
             try:metrics[metric]=load()
-            except Exception:
+            except Exception as exc:
                 # A transport/auth/schema failure is a technical error, unlike an empty valid report.
-                errors.append(metric+' source failed')
+                errors.append(metric+' source failed ('+type(exc).__name__+')')
                 metrics[metric]=[DASH]*3 if metric=='tops' else DASH
             result=metrics[metric]
             for i,(r,c) in enumerate(targets[metric]):
@@ -129,7 +129,7 @@ def main():
                     errors=fill_branch(browser,client,branch,day,args.operation=='apply',summary)
                     summary['errors'].extend(branch.name+': '+e for e in errors)
                 except Exception as exc:
-                    message=str(exc) if isinstance(exc,StructureError) else 'technical failure'
+                    message=str(exc) if isinstance(exc,StructureError) else 'technical failure ('+type(exc).__name__+')'
                     summary['errors'].append(branch.name+': '+message)
         finally:browser.close()
     # Counts only; no source documents, money, credentials, or remote error bodies in logs.
