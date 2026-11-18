@@ -57,7 +57,7 @@ class SUReports:
         if urllib.parse.urlsplit(path).path not in ('/site/login',REVENUE,WRITEOFF):
             raise ValueError('Only metrics read endpoints allowed')
         encoded=urllib.parse.urlencode(data,doseq=True).encode() if data is not None else None
-        with self.opener.open(SU+path,encoded,timeout=180 if path==REVENUE else 60) as response:
+        with self.opener.open(SU+path,encoded,timeout=600 if path==REVENUE else 120) as response:
             result=response.read().decode()
         if path!='/site/login' and 'LoginForm[password]' in result:
             raise StructureError('SU session expired')
