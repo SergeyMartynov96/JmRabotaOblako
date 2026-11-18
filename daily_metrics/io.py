@@ -63,14 +63,9 @@ class SUReports:
             raise StructureError('SU session expired')
         return result
     def login(self):
-        # Preserve the owner's existing authorization source without importing purchase code.
         username=os.getenv('LIFEMART_LOGIN');password=os.getenv('LIFEMART_PASSWORD')
         if not (username and password):
-            from pathlib import Path
-            source=(Path(__file__).resolve().parents[1]/'AGENTS.md').read_text()
-            match=re.search(r'Логин\s*[:=]?\s*(\d{10,11})\s+Пароль\s*[:=]?\s*(\S+)',source,re.I)
-            if not match:raise StructureError('SU credentials unavailable')
-            username,password=match.groups();password=password.strip('`\"\'')
+            raise StructureError('LIFEMART_LOGIN and LIFEMART_PASSWORD must be configured in GitHub Actions Secrets')
         if os.getenv('GITHUB_ACTIONS')=='true':
             for item in (username,password):
                 print('::add-mask::'+item.replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)

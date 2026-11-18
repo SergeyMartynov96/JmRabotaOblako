@@ -141,13 +141,7 @@ def supplier_column(supplier, headers):
 def credentials():
     username, password = os.getenv("LIFEMART_LOGIN"), os.getenv("LIFEMART_PASSWORD")
     if not (username and password):
-        # Existing credentials file explicitly selected by the repository owner.
-        text = (ROOT / "AGENTS.md").read_text()
-        match = re.search(r"Логин\s*[:=]?\s*(\d{10,11})\s+Пароль\s*[:=]?\s*(\S+)", text, re.I)
-        if not match:
-            raise RuntimeError("Credentials unavailable")
-        username, password = match.groups()
-        password = password.strip("`\"'")
+        raise RuntimeError("LIFEMART_LOGIN and LIFEMART_PASSWORD must be configured in GitHub Actions Secrets")
     if os.getenv("GITHUB_ACTIONS") == "true":
         for value in (username, password):
             value = value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
