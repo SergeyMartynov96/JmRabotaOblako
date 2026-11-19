@@ -1,0 +1,76 @@
+name: LifeMart private Telegram reports
+run-name: Telegram reports (${{ inputs.operation || 'deliver' }} / ${{ inputs.branch || 'all' }})
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [preview, deliver]
+        default: preview
+        required: true
+      branch:
+        type: choice
+        options: [all, АВ12, М42, Г34]
+        default: all
+      review_public_key:
+        description: Optional base64 public key; required for preview
+        type: string
+        default: ''
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: lifemart-private-telegram-reports
+  cancel-in-progress: false
+jobs:
+  reports:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      LIFEMART_LOGIN: ${{ secrets.LIFEMART_LOGIN }}
+      LIFEMART_PASSWORD: ${{ secrets.LIFEMART_PASSWORD }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      REVIEW_PUBLIC_KEY: ${{ inputs.review_public_key }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: python3 -m pip install playwright==1.62.0 cryptography==50.0.0 Pillow==13.0.0 pypdfium2==5.14.0
+      - name: Record local report day
+        id: day
+        run: echo "date=$(TZ=Asia/Yekaterinburg date -d yesterday +%F)" >> "$GITHUB_OUTPUT"
+      - name: Collect approved report images
+        env:
+          OPERATION: ${{ inputs.operation || 'deliver' }}
+          BRANCH: ${{ inputs.branch || 'all' }}
+        run: python3 -m telegram_reports.run --operation "$OPERATION" --branch "$BRANCH"
+      - name: Encrypted private review
+        if: always() && inputs.review_public_key != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: encrypted-report-review
+          path: review.enc.json
+          retention-days: 1
+          if-no-files-found: error
+      - name: AV12 delivery attempt receipt
+        if: always() && hashFiles('telegram-receipts/115.json') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: telegram-attempt-${{ steps.day.outputs.date }}-115
+          path: telegram-receipts/115.json
+          retention-days: 14
+      - name: M42 delivery attempt receipt
+        if: always() && hashFiles('telegram-receipts/153.json') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: telegram-attempt-${{ steps.day.outputs.date }}-153
+          path: telegram-receipts/153.json
+          retention-days: 14
+      - name: G34 delivery attempt receipt
+        if: always() && hashFiles('telegram-receipts/357.json') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: telegram-attempt-${{ steps.day.outputs.date }}-357
+          path: telegram-receipts/357.json
+          retention-days: 14

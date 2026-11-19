@@ -13,7 +13,7 @@ def capture_chart(bi,form,payload,destination,width=900,height=430):
     def serve(route):
         served.append(True)
         if '/superset/explore_json/' in route.request.url:
-            route.fulfill(status=200,content_type='application/json',body=json.dumps({**payload['result'][0],'form_data':form}))
+            route.fulfill(status=200,content_type='application/json',body=json.dumps(payload.get('legacy_payload') or {**payload['result'][0],'form_data':form}))
         else:route.fulfill(status=200,content_type='application/json',body=json.dumps(payload))
     page.route('**/api/v1/chart/data**',serve)
     page.route('**/superset/explore_json/**',serve)
@@ -56,3 +56,22 @@ def compose(browser,panels,destination,columns=1,heading=None):
         page.wait_for_function('() => [...document.images].every(i=>i.complete && i.naturalWidth>0)')
         page.locator('main').screenshot(path=str(destination))
     finally:context.close()
+
+
+def query_from_renderer(bi,form):
+    """Ask Superset's own chart plugin to build a missing saved query; block execution."""
+    page=bi.context.new_page();captured=[]
+    deadline=time.monotonic()+180
+    def intercept(route):
+        if route.request.method=='POST':
+            try:captured.append(route.request.post_data_json)
+            except Exception:pass
+        route.fulfill(status=200,content_type='application/json',body='{"result":[]}')
+    page.route('**/api/v1/chart/data**',intercept)
+    page.route('**/superset/explore_json/**',lambda route:route.abort())
+    try:
+        page.goto(BI+'/superset/explore/?'+urllib.parse.urlencode({'form_data':json.dumps(form,ensure_ascii=False),'standalone':1}),wait_until='commit',timeout=180000)
+        while not captured and time.monotonic()<deadline:page.wait_for_timeout(100)
+        if len(captured)!=1 or not captured[0].get('queries'):raise StructureError('Chart plugin did not build one report query')
+        return captured[0]
+    finally:page.close()

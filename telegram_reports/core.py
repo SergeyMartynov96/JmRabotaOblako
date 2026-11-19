@@ -22,6 +22,7 @@ def constrained_query(form,saved,branch,start,end,dashboard,osa=False):
             metrics=[m for m in q.get('metrics',[]) if (m.get('label') if isinstance(m,dict) else m) in OSA_METRICS]
             if len(metrics)!=2:raise StructureError('OSA report requires exactly 11:00 and 20:00')
             q['metrics']=metrics
+            q['orderby']=[[OSA_METRICS[0],False]]
             # Saved pivot post-processing names all five series; recalculate only selected series.
             q['post_processing']=[]
     display=copy.deepcopy(form)
