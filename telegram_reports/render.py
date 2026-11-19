@@ -3,6 +3,7 @@ import base64,html,json,urllib.parse,time
 from pathlib import Path
 from daily_metrics.extended_io import BI
 from daily_metrics.core import StructureError
+from .security import arm_failed_cleanup
 
 
 def active_page(bi):
@@ -11,6 +12,24 @@ def active_page(bi):
         page=bi.context.new_page();bi.report_page=page
     page.bring_to_front()
     return page
+
+
+def load_explore(bi,page,form,height,deadline):
+    """Buffer the authorized HTML response before Chromium starts parsing it."""
+    def remaining():return max(1,int((deadline-time.monotonic())*1000))
+    url=BI+'/superset/explore/?'+urllib.parse.urlencode({'form_data':json.dumps(form,ensure_ascii=False),'standalone':'1','height':height})
+    response=bi.context.request.get(url,timeout=remaining())
+    location=urllib.parse.urlsplit(response.url)
+    if response.status!=200 or location.hostname!='bi.lifemart.ru' or location.path!='/superset/explore/':
+        raise StructureError('BI renderer document authentication failed')
+    document=response.text()
+    if '<html' not in document.casefold():raise StructureError('BI renderer HTML missing')
+    def document_response(route):route.fulfill(status=200,content_type='text/html; charset=utf-8',body=document)
+    pattern='**/superset/explore/**'
+    page.route(pattern,document_response)
+    try:
+        return page.goto(url,wait_until='commit',timeout=remaining())
+    finally:page.unroute(pattern,document_response)
 
 
 def capture_chart(bi,form,payload,destination,width=900,height=430):
@@ -26,10 +45,9 @@ def capture_chart(bi,form,payload,destination,width=900,height=430):
     page.route('**/api/v1/chart/data**',serve)
     page.route('**/superset/explore_json/**',serve)
     try:
-        params={'form_data':json.dumps(form,ensure_ascii=False),'standalone':'1','height':height}
         phase='document'
         print(json.dumps({'renderer_phase':phase,'slice_id':form.get('slice_id')}),flush=True)
-        response=page.goto(BI+'/superset/explore/?'+urllib.parse.urlencode(params),wait_until='commit',timeout=remaining())
+        response=load_explore(bi,page,form,height,deadline)
         if response is None or response.status!=200:raise StructureError('BI renderer document failed')
         phase='visible_content'
         page.wait_for_function("() => document.visibilityState==='visible'",timeout=remaining())
@@ -59,6 +77,7 @@ def capture_chart(bi,form,payload,destination,width=900,height=430):
         else:page.screenshot(path=str(destination))
         return {'validated_result_rendered':True}
     except Exception:
+        arm_failed_cleanup(bi)
         print(json.dumps({'renderer_failed_phase':locals().get('phase','setup'),'slice_id':form.get('slice_id')}),flush=True)
         try:page.screenshot(path=str(Path(destination).with_suffix(".failed.png")),timeout=5000)
         except Exception:pass
@@ -97,10 +116,13 @@ def query_from_renderer(bi,form):
     def abort_legacy(route):route.abort()
     page.route('**/superset/explore_json/**',abort_legacy)
     try:
-        page.goto(BI+'/superset/explore/?'+urllib.parse.urlencode({'form_data':json.dumps(form,ensure_ascii=False),'standalone':1}),wait_until='commit',timeout=180000)
+        load_explore(bi,page,form,500,deadline)
         while not captured and time.monotonic()<deadline:page.wait_for_timeout(100)
         if len(captured)!=1 or not captured[0].get('queries'):raise StructureError('Chart plugin did not build one report query')
         return captured[0]
+    except Exception:
+        arm_failed_cleanup(bi)
+        raise
     finally:
         page.unroute('**/api/v1/chart/data**',intercept)
         page.unroute('**/superset/explore_json/**',abort_legacy)

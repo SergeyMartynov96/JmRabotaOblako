@@ -16,7 +16,7 @@ from .core import weekly_period,OSA_METRICS
 from .render import capture_chart,compose,active_page
 from .sheets import capture_week
 from .invoices import capture_invoices
-from .security import seal_images
+from .security import seal_images,seal_tree,arm_failed_cleanup
 from .transport import BotClient,BotError,decrypt_recipient,send_album
 from .connect import BINDING
 
@@ -137,6 +137,7 @@ def main():
                 browser=pw.chromium.launch(headless=not bool(os.getenv('DISPLAY')),executable_path=shutil.which('google-chrome'))
                 client=ReportSUReports();client.ensure_authenticated()
                 bi=BIReports(browser,client);charts=ReportCharts(bi)
+                bi.seal_before_exit=lambda:seal_tree(root,public,'review.enc.json')
                 try:
                     bi.authenticate()
                     captured=[]
@@ -147,6 +148,9 @@ def main():
                     for branch,folder,source in captured:
                         images,text=assemble(browser,bi,branch,day,folder,*source)
                         collected.append((branch,images,text))
+                except Exception:
+                    arm_failed_cleanup(bi)
+                    raise
                 finally:bi.close();browser.close()
             preflight(collected,branches)
             if args.operation=='deliver':
