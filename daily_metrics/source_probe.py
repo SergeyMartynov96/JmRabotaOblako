@@ -50,7 +50,10 @@ def main():
                             if result is not None and stored:
                                 expected=number(stored)
                                 from decimal import Decimal,ROUND_HALF_UP
-                                actual=number(result).quantize(Decimal('1') if kind=='invoices' else Decimal('0.01') if kind=='uv' else Decimal('0.1'),rounding=ROUND_HALF_UP)
+                                import re
+                                decimals=re.search(r'[.,](\d+)\s*%?$',stored)
+                                places=len(decimals[1]) if decimals else 0
+                                actual=number(result).quantize(Decimal(10)**-places,rounding=ROUND_HALF_UP)
                                 info['matches_existing']=actual==expected
                         if result is not None:verified+=1
                         else:failures.append(branch.name+': '+kind+' empty')

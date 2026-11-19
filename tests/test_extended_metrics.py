@@ -143,3 +143,22 @@ class OSASelection(unittest.TestCase):
         self.assertEqual(query['metrics'],['OSA "На 20:00"'])
         self.assertIn({'col':'in_stock','op':'==','val':1},query['filters'])
         self.assertEqual(query['post_processing'],[])
+
+class ChartBinding(unittest.TestCase):
+    def test_exact_saved_chart_is_loaded_without_whole_dashboard(self):
+        import json
+        from unittest.mock import Mock
+        from daily_metrics.extended_io import BIReports,CHARTS
+        reader=BIReports(Mock(),Mock())
+        reader.api=Mock(return_value={'result':{'slice_name':CHARTS['osa'][1],
+            'params':json.dumps({'datasource':'4626__table'}),
+            'query_context':json.dumps({'queries':[{'metrics':['OSA "На 20:00"']}]})}})
+        form,context=reader.template('osa')
+        self.assertEqual(form['slice_id'],3696)
+        self.assertEqual(context['queries'][0]['metrics'],['OSA "На 20:00"'])
+        reader.api.assert_called_once_with('/api/v1/chart/3696')
+    def test_out_of_layout_reason_is_not_silently_added_to_damage(self):
+        from daily_metrics.extended_core import bi_reasons
+        from decimal import Decimal
+        payload={'result':[{'data':[{'reason':'Порча','Списания %':.001},{'reason':'Брак','Списания %':.002}]}]}
+        self.assertEqual(bi_reasons(payload,'Списания %'),{'damage':Decimal('.100')})

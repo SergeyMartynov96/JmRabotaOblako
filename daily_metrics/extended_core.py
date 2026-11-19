@@ -131,7 +131,9 @@ def bi_reasons(payload,metric):
     for row in bi_rows(payload):
         if 'reason' not in row or metric not in row:raise StructureError('BI reason columns missing')
         name=reason_key(row['reason'])
-        if name is None:raise StructureError('Unmapped BI reason')
+        if name is None:
+            if key(row['reason'])=='брак':continue  # No corresponding column; classification pending owner input.
+            raise StructureError('Unmapped BI reason')
         if name in values:raise StructureError('BI reason duplicated')
         result=percentage_points(row[metric])
         if result is not None:values[name]=result

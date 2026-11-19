@@ -10,9 +10,9 @@ BI='https://bi.lifemart.ru'
 BI_INDEX='/handbook/biSupersetSettings/index'
 INVOICES='/turnover/waybill/report'
 CHARTS={
-    'uv':(37,'Упущенная выручка. Период. Магазины. % (мета) 2.0'),
-    'osa':(56,'OSA % по in_stock Готовая еда + Япония'),
-    'reasons':(241,'Списания. Причины. Период, %'),
+    'uv':(37,'Упущенная выручка. Период. Магазины. % (мета) 2.0',3770),
+    'osa':(56,'OSA % по in_stock Готовая еда + Япония',3696),
+    'reasons':(241,'Списания. Причины. Период, %',4412),
 }
 
 
@@ -105,7 +105,9 @@ class BIReports:
             if not token:raise StructureError('BI read token unavailable')
             response=self.context.request.post(BI+path,data=data,
                 headers={'X-CSRFToken':token,'Referer':BI+'/'},timeout=180000)
-        payload=response.json()
+        try:payload=response.json()
+        except Exception:
+            raise StructureError('BI non-JSON response HTTP '+str(response.status)+' at '+path) from None
         if response.status!=200:
             types=','.join(str(e.get('error_type','unknown')) for e in payload.get('errors',[]) if isinstance(e,dict))
             raise StructureError('BI read unsuccessful HTTP '+str(response.status)+' at '+path+' '+types)
@@ -121,13 +123,13 @@ class BIReports:
 
     def _template(self,kind):
         if kind not in self.templates:
-            dashboard,title=CHARTS[kind]
-            charts=self.api(f'/api/v1/dashboard/{dashboard}/charts').get('result',[])
-            matches=[chart for chart in charts if chart.get('slice_name')==title]
-            if len(matches)!=1:raise StructureError('BI chart missing or duplicated')
-            form=matches[0].get('form_data') or {}
+            dashboard,title,chart_id=CHARTS[kind]
+            detail=self.api(f'/api/v1/chart/{chart_id}').get('result',{})
+            if detail.get('slice_name')!=title:raise StructureError('BI chart title changed')
+            form=detail.get('form_data') or detail.get('params') or {}
             if isinstance(form,str):form=json.loads(form)
-            detail=self.api(f"/api/v1/chart/{form['slice_id']}").get('result',{})
+            if not isinstance(form,dict) or not form:raise StructureError('BI chart form unavailable')
+            form['slice_id']=chart_id
             context=detail.get('query_context')
             if isinstance(context,str):context=json.loads(context)
             if not context:raise StructureError('BI saved query unavailable')
