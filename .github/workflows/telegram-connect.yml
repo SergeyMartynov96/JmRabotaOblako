@@ -1,0 +1,36 @@
+name: Telegram private connection
+run-name: Telegram private connection (${{ inputs.operation }})
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [pair, test]
+        default: pair
+        required: true
+      pairing_hash:
+        description: SHA-256 of the one-time code; never enter the bot token or chat ID
+        type: string
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: lifemart-telegram-connection
+  cancel-in-progress: false
+jobs:
+  connect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install authenticated encryption
+        run: python3 -m pip install cryptography==50.0.0
+      - name: Validate private pairing and send one connection test
+        env:
+          OPERATION: ${{ inputs.operation }}
+          PAIRING_HASH: ${{ inputs.pairing_hash }}
+        run: python3 -m telegram_reports.connect --operation "$OPERATION" --pairing-hash "$PAIRING_HASH"
