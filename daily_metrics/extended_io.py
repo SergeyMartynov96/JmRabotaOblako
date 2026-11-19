@@ -17,8 +17,14 @@ CHARTS={
 
 class BILinks(HTMLParser):
     def __init__(self):
-        super().__init__();self.links=[]
+        super().__init__();self.links=[];self.csrf=None
     def handle_starttag(self,tag,attrs):
+        a=dict(attrs)
+        if a.get('name') in ('csrf_token','csrf-token'):
+            self.csrf=a.get('value') or a.get('content')
+        if a.get('data-bootstrap'):
+            try:self.csrf=json.loads(a['data-bootstrap']).get('common',{}).get('csrf_token') or self.csrf
+            except (ValueError,TypeError):pass
         if tag=='a':
             href=dict(attrs).get('href')
             if href:self.links.append(href)
@@ -27,7 +33,7 @@ class BILinks(HTMLParser):
 class BIReports:
     def __init__(self,browser,client):
         self.browser=browser;self.client=client;self.context=None
-        self.templates={};self.cache={};self._auth_error=None
+        self.templates={};self.cache={};self._auth_error=None;self.csrf=None
 
     def authenticate(self):
         if self._auth_error is not None:raise self._auth_error
@@ -55,6 +61,7 @@ class BIReports:
             response=context.request.get(links[0],timeout=180000)
             if response.status!=200 or '/superset/' not in response.url:
                 raise StructureError('BI authentication failed')
+            html=BILinks();html.feed(response.text());self.csrf=html.csrf
             self.context=context
         except Exception as exc:
             self._auth_error=exc
@@ -69,11 +76,11 @@ class BIReports:
             response=self.context.request.get(BI+path,timeout=180000)
         else:
             if path!='/api/v1/chart/data':raise StructureError('Only BI query POST allowed')
-            token=self.api('/api/v1/security/csrf_token/').get('result')
+            token=self.csrf or self.api('/api/v1/security/csrf_token/').get('result')
             if not token:raise StructureError('BI read token unavailable')
             response=self.context.request.post(BI+path,data=data,
                 headers={'X-CSRFToken':token,'Referer':BI+'/'},timeout=180000)
-        if response.status!=200:raise StructureError('BI read unsuccessful HTTP '+str(response.status))
+        if response.status!=200:raise StructureError('BI read unsuccessful HTTP '+str(response.status)+' at '+path)
         payload=response.json()
         if payload.get('errors'):raise StructureError('BI query rejected: '+','.join(str(e.get('error_type','unknown')) for e in payload['errors']))
         return payload

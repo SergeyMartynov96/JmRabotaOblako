@@ -19,7 +19,7 @@ def main():
                 print(json.dumps({'stage':'inspect','source':kind}),flush=True)
                 try:
                     form,context=sources.bi.template(kind)
-                    print(json.dumps({'source':kind,'slice_id':form.get('slice_id'),'value_format':form.get('valueFormat'),
+                    print(json.dumps({'source':kind,'slice_id':form.get('slice_id'),'value_format':form.get('valueFormat'),'csrf_html':bool(sources.bi.csrf),
                         'queries':[{k:q.get(k) for k in ('columns','granularity','is_timeseries','post_processing')} for q in context.get('queries',[])]},ensure_ascii=False),flush=True)
                 except Exception as exc:
                     print(json.dumps({'source':kind,'template_error':type(exc).__name__}),flush=True)
