@@ -12,7 +12,7 @@ def fill_extra(sheet,sources,branch,day,header,row,rows,apply,summary,check_date
         cell=a1(r,c);sheet.anchors[cell]=sheet.anchor_value(cell)
     errors=[]
     for metric,cells in targets.items():
-        pending=[(r,c) for r,c in cells if not sheet.formula(a1(r,c))]
+        pending=[(r,c) for r,c in cells if not sheet.stable_formula(a1(r,c))]
         summary['preserved']+=len(cells)-len(pending)
         if apply and not pending and metric!='reasons':continue
         print(branch.name+': reading '+metric,flush=True)
@@ -36,7 +36,7 @@ def fill_extra(sheet,sources,branch,day,header,row,rows,apply,summary,check_date
             merged=percent_literal(result['damage'],branch.name,1)
             for r,c in layout['reasons'].get('damage',[]):
                 if (r,c) in pending or same_cell_value(old,merged):continue
-                cell=a1(r,c);current=sheet.formula(cell)
+                cell=a1(r,c);current=sheet.stable_formula(cell)
                 if not same_cell_value(current,old):continue
                 check_date(day)
                 if apply:

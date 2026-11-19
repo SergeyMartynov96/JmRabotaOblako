@@ -67,7 +67,7 @@ class BlankOnlyWrite(unittest.TestCase):
         from unittest.mock import Mock
         sheet=object.__new__(RevenueSheet)
         sheet.allowed={'C5'};sheet.anchors={'A5':'17.11.2026'}
-        sheet.formula=Mock(return_value='18.11.2026');sheet.page=Mock()
+        sheet.formula=Mock(return_value='18.11.2026');sheet.anchor_value=Mock(return_value='18.11.2026');sheet.page=Mock()
         with self.assertRaises(StructureError):sheet.put_blank('C5','999')
         sheet.page.keyboard.type.assert_not_called()
     def test_procurement_cells_cannot_be_written(self):
@@ -109,7 +109,7 @@ class PercentEntryRegression(unittest.TestCase):
         from unittest.mock import Mock
         sheet=object.__new__(RevenueSheet)
         sheet.allowed={'L18'};sheet.anchors={}
-        sheet.formula=Mock(side_effect=['','4,80%'])
+        sheet.stable_formula=Mock(return_value='');sheet.formula=Mock(return_value='4,80%')
         sheet.select=Mock();sheet.page=Mock()
         self.assertTrue(sheet.put_blank('L18','4,8%'))
         sheet.page.keyboard.type.assert_not_called()

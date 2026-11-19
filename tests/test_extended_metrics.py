@@ -71,6 +71,7 @@ class ReasonTransfer(unittest.TestCase):
                 'reasons':{'sg_purchase':[(13,11)],'sg_min_stock':[(24,15)],'sg_rotation':[(24,11)]},'date_anchors':[]}
         sheet=Mock();sheet.allowed=set();sheet.anchors={}
         sheet.formula.side_effect=lambda cell: 'filled' if cell in ('F4','J4','P4','L14') else ''
+        sheet.stable_formula=sheet.formula
         sheet.put_blank.return_value=True
         sources=Mock();sources.read.return_value={'sg_purchase':2.2,'sg_min_stock':.1}
         summary={'written':0,'preserved':0,'missing':0,'planned':0}
@@ -179,6 +180,7 @@ class CombinedDamage(unittest.TestCase):
         layout={'uv':(3,5),'osa':(3,9),'invoices':(3,15),'reasons':{'damage':[(17,14)]},'date_anchors':[]}
         sheet=Mock();sheet.allowed=set();sheet.anchors={}
         sheet.formula.side_effect=lambda cell:'0,1' if cell=='O18' else 'filled'
+        sheet.stable_formula=sheet.formula
         sheet.replace_if_unchanged.return_value=True
         sources=Mock();sources.read.return_value=result
         summary={'written':0,'preserved':0,'missing':0,'planned':0}
@@ -212,7 +214,7 @@ class StableAnchors(unittest.TestCase):
         from daily_metrics.io import RevenueSheet
         sheet=RevenueSheet.__new__(RevenueSheet);sheet.page=Mock()
         sheet.formula=Mock(side_effect=['18.11.2026','16.11-22.11','16.11-22.11'])
-        self.assertEqual(sheet.anchor_value('G3132'),'16.11-22.11')
+        self.assertEqual(sheet.stable_formula('G3132'),'16.11-22.11')
     def test_recheck_allows_transient_stale_read_but_rejects_real_week_change(self):
         from unittest.mock import Mock
         from daily_metrics.io import RevenueSheet
@@ -230,3 +232,21 @@ class LoginErrors(unittest.TestCase):
         with patch.dict('os.environ',{'LIFEMART_LOGIN':'test-user','LIFEMART_PASSWORD':'test-pass'}):
             with self.assertRaisesRegex(StructureError,'HTTP 503'):reader._browser_login(page)
         page.locator.assert_not_called()
+
+class NativeDateAnchors(unittest.TestCase):
+    def test_unformatted_date_keeps_year_even_with_short_display(self):
+        from unittest.mock import Mock,patch
+        from daily_metrics.io import native_cell,RevenueSheet
+        import json
+        payload={'status':'ok','table':{'cols':[{'type':'date'}],'rows':[{'c':[{'v':'Date(2026,10,18)','f':'18.11'}]}]}}
+        body='google.visualization.Query.setResponse('+json.dumps(payload)+');'
+        with patch('daily_metrics.io.get',return_value=body):
+            self.assertEqual(native_cell('book',0,'A6'),('date','Date(2026,10,18)'))
+            sheet=RevenueSheet.__new__(RevenueSheet);sheet.branch=Mock(book='book',revenue_gid=0)
+            self.assertTrue(sheet.is_reporting_date('A6',dt.date(2026,11,18)))
+            self.assertFalse(sheet.is_reporting_date('A6',dt.date(2025,11,18)))
+    def test_unexpected_native_response_is_not_a_blank_date(self):
+        from unittest.mock import patch
+        from daily_metrics.io import native_cell
+        with patch('daily_metrics.io.get',return_value='<html>unavailable</html>'):
+            with self.assertRaises(StructureError):native_cell('book',0,'A6')

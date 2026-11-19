@@ -41,7 +41,7 @@ def fill_branch(browser,client,branch,day,apply,summary,extra_sources=None):
         found=[]
         for row,header in target_candidates(rows,day,branch.newest_first):
             # Native date's underlying full year prevents matching a historical same dd.mm.
-            if date_matches(sheet.formula(a1(row,0)),day):
+            if date_matches(sheet.formula(a1(row,0)),day) and sheet.is_reporting_date(a1(row,0),day):
                 found.append((row,header))
         if len(found)!=1:raise StructureError('Revenue date missing or duplicated')
         row,header=found[0]

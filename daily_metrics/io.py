@@ -1,5 +1,6 @@
 """Narrow network adapters. SU report generation is read-only."""
 import csv
+import datetime as dt
 import http.cookiejar
 import io
 import json
@@ -16,9 +17,24 @@ REVENUE='/receipts/receiptsGeneral/ajax_report'
 WRITEOFF='/turnover/writeOffAct/report'
 
 
-def get(url):
-    with urllib.request.urlopen(url,timeout=45) as response:
+def get(url,timeout=45):
+    with urllib.request.urlopen(url,timeout=timeout) as response:
         return response.read().decode('utf-8-sig')
+
+
+def native_cell(book,gid,cell):
+    """Read one unformatted public Sheets cell, preserving the date's full year."""
+    params={'gid':str(gid),'range':cell,'headers':'0','tqx':'out:json','cachebust':str(time.time_ns())}
+    raw=get(f'https://docs.google.com/spreadsheets/d/{book}/gviz/tq?'+urllib.parse.urlencode(params),timeout=20)
+    try:
+        result=json.loads(raw[raw.index('{'):raw.rindex('}')+1])
+        if result.get('status')!='ok':raise ValueError()
+        table=result['table'];cols=table['cols'];rows=table['rows']
+        if len(cols)!=1 or len(rows)>1:raise ValueError()
+        data=(rows[0].get('c') or [None])[0] if rows else None
+        return cols[0]['type'],data.get('v') if isinstance(data,dict) else None
+    except (ValueError,KeyError,IndexError,TypeError):
+        raise StructureError('Sheets native cell unavailable ('+cell+')') from None
 
 
 def csv_sheet(book,gid):
@@ -142,7 +158,7 @@ class RevenueSheet:
         result=bar.inner_text().strip();self.page.wait_for_timeout(150)
         if result!=bar.inner_text().strip():raise StructureError('Unstable cell selection')
         return result
-    def anchor_value(self,cell):
+    def stable_formula(self,cell):
         # The name box can update before the formula bar, especially after recalculation.
         # Require agreement across independent selections before taking a snapshot.
         first=self.formula(cell);self.page.wait_for_timeout(250)
@@ -152,6 +168,20 @@ class RevenueSheet:
         third=self.formula(cell)
         if second!=third:raise StructureError('Unstable revenue anchor '+cell)
         return third
+
+    def anchor_value(self,cell):
+        kind,value=native_cell(self.branch.book,self.branch.revenue_gid,cell)
+        if kind not in ('date','datetime','string') or value is None or value=='':
+            raise StructureError('Invalid date/week anchor ('+cell+')')
+        return kind,value
+
+    def is_reporting_date(self,cell,day):
+        kind,value=native_cell(self.branch.book,self.branch.revenue_gid,cell)
+        if kind=='string':
+            from .core import date_matches
+            return date_matches(value,day)
+        match=re.match(r'Date\((\d{4}),(\d{1,2}),(\d{1,2})(?:,|\))',str(value)) if kind in ('date','datetime') else None
+        return bool(match and dt.date(int(match[1]),int(match[2])+1,int(match[3]))==day)
 
     def check_anchors(self):
         for cell,expected in self.anchors.items():
@@ -165,7 +195,7 @@ class RevenueSheet:
     def put_blank(self,cell,result):
         if cell not in self.allowed:raise StructureError('Write outside approved revenue cells')
         self.check_anchors()
-        if self.formula(cell):return False
+        if self.stable_formula(cell):return False
         # Paste once: character-by-character typing into a percent-formatted cell can
         # append Sheets' automatic percent suffix twice (e.g. 4,8%%).
         self.select(cell)
@@ -184,7 +214,7 @@ class RevenueSheet:
         """Only the approved defect+damage correction may replace a verified old scalar."""
         if cell not in self.allowed:raise StructureError('Write outside approved revenue cells')
         self.check_anchors()
-        actual=self.formula(cell)
+        actual=self.stable_formula(cell)
         if actual.startswith('=') or not same_cell_value(actual,expected):return False
         self.select(cell)
         self.page.evaluate('(text) => navigator.clipboard.writeText(text)',result)
