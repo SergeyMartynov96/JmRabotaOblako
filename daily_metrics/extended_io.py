@@ -44,14 +44,9 @@ class BIReports:
                 if hasattr(handler,'cookiejar'):
                     context.add_cookies([{'name':c.name,'value':c.value,'domain':c.domain,'path':c.path,'secure':c.secure}
                                          for c in handler.cookiejar])
-            for attempt in range(3):
-                try:
-                    response=context.request.get(links[0],timeout=45000)
-                    if response.status!=200 or '/superset/' not in response.url:
-                        raise StructureError('BI authentication failed')
-                    break
-                except Exception:
-                    if attempt==2:raise
+            response=context.request.get(links[0],timeout=600000)
+            if response.status!=200 or '/superset/' not in response.url:
+                raise StructureError('BI authentication failed')
             self.context=context
         except Exception:
             context.close();raise
@@ -62,13 +57,13 @@ class BIReports:
                 or path=='/api/v1/security/csrf_token/'):
             raise StructureError('Unapproved BI read endpoint')
         if data is None:
-            response=self.context.request.get(BI+path,timeout=180000)
+            response=self.context.request.get(BI+path,timeout=600000)
         else:
             if path!='/api/v1/chart/data':raise StructureError('Only BI query POST allowed')
             token=self.api('/api/v1/security/csrf_token/').get('result')
             if not token:raise StructureError('BI read token unavailable')
             response=self.context.request.post(BI+path,data=data,
-                headers={'X-CSRFToken':token,'Referer':BI+'/'},timeout=180000)
+                headers={'X-CSRFToken':token,'Referer':BI+'/'},timeout=600000)
         if response.status!=200:raise StructureError('BI read unsuccessful')
         payload=response.json()
         if payload.get('errors'):raise StructureError('BI query rejected')

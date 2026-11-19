@@ -62,11 +62,11 @@ class SUReports:
         if data is not None and urllib.parse.urlsplit(path).path not in ('/site/login',REVENUE):
             raise ValueError('Only login and revenue report POST allowed')
         encoded=urllib.parse.urlencode(data,doseq=True).encode() if data is not None else None
-        fast=urllib.parse.urlsplit(path).path in ('/site/login','/handbook/biSupersetSettings/index')
+        fast=urllib.parse.urlsplit(path).path=='/site/login'
         attempts=3 if fast else 1
         for attempt in range(attempts):
             try:
-                with self.opener.open(SU+path,encoded,timeout=35 if fast else (600 if path==REVENUE else 120)) as response:
+                with self.opener.open(SU+path,encoded,timeout=35 if fast else (600 if path==REVENUE or urllib.parse.urlsplit(path).path=='/handbook/biSupersetSettings/index' else 120)) as response:
                     result=response.read().decode()
                 break
             except urllib.error.HTTPError as exc:
