@@ -58,17 +58,19 @@ class BIReports:
                     context.add_cookies([{'name':c.name,'value':c.value,'domain':c.domain,'path':c.path,'secure':c.secure}
                                          for c in handler.cookiejar])
             # Follow the same accounting redirects in Chrome as the user's dashboard.
-            def abort_initial_charts(route):route.abort()
-            context.route('**/api/v1/chart/data*',abort_initial_charts)
+            def session_documents(route):
+                if route.request.resource_type=='document':route.continue_()
+                else:route.abort()
+            context.route('**/*',session_documents)
             page=context.new_page()
             try:
-                response=page.goto(links[0],wait_until='commit',timeout=180000)
+                response=page.goto(links[0],wait_until='domcontentloaded',timeout=180000)
                 location=urllib.parse.urlsplit(page.url)
                 if response is None or response.status!=200 or location.hostname!='bi.lifemart.ru' or not location.path.startswith('/superset/'):
                     raise StructureError('BI authentication failed')
-                html=BILinks();html.feed(response.text());self.csrf=html.csrf
+                html=BILinks();html.feed(page.content());self.csrf=html.csrf
             finally:
-                page.close();context.unroute('**/api/v1/chart/data*',abort_initial_charts)
+                page.close();context.unroute('**/*',session_documents)
             self.context=context
             print('BI: session authenticated',flush=True)
         except Exception as exc:
@@ -78,7 +80,7 @@ class BIReports:
     def api(self,path,data=None):
         self.authenticate()
         if not (path.startswith('/api/v1/dashboard/') or path.startswith('/api/v1/chart/')
-                or path in ('/api/v1/security/csrf_token/','/api/v1/dataset/3437/column/reason/values/')):
+                or path=='/api/v1/security/csrf_token/'):
             raise StructureError('Unapproved BI read endpoint')
         if data is None:
             response=self.context.request.get(BI+path,timeout=180000)

@@ -24,7 +24,7 @@ def main():
         sources=ExtraSources(browser,client)
         try:
             sources.bi.authenticate()
-            for kind in ('uv','osa','reasons'):
+            for kind in ('osa','reasons'):
                 print(json.dumps({'stage':'inspect','source':kind}),flush=True)
                 try:
                     form,context=sources.bi.template(kind)
@@ -32,15 +32,11 @@ def main():
                         'queries':[{k:q.get(k) for k in ('columns','granularity','is_timeseries','post_processing')} for q in context.get('queries',[])]},ensure_ascii=False),flush=True)
                 except Exception as exc:
                     print(json.dumps({'source':kind,'template_error':safe_error(exc)}),flush=True)
-            try:
-                labels=sources.bi.api('/api/v1/dataset/3437/column/reason/values/').get('result',[])
-                print(json.dumps({'available_reason_labels':labels},ensure_ascii=False),flush=True)
-            except Exception as exc:print(json.dumps({'reason_labels_error':safe_error(exc)}),flush=True)
-            for branch in BRANCHES:
+            for branch in (BRANCHES[1],):
                 rows=csv_sheet(branch.book,branch.revenue_gid)
                 row,header=target_candidates(rows,day,branch.newest_first)[0]
                 layout=extra_targets(rows,header,row,day)
-                for kind in ('uv','osa','reasons'):
+                for kind in ('osa','reasons'):
                     print(json.dumps({'stage':'read','branch':branch.name,'source':kind}),flush=True)
                     try:
                         result=sources.read(kind,branch,day)
@@ -62,15 +58,6 @@ def main():
                     except Exception as exc:
                         failures.append(branch.name+': '+kind)
                         print(json.dumps({'branch':branch.name,'source':kind,'error':safe_error(exc)}),flush=True)
-                        if kind=='uv' and '403' in str(exc):
-                            try:
-                                from .frontend_probe import read_uv_from_frontend
-                                actual=read_uv_from_frontend(sources.bi,branch,day)
-                                r,c=layout[kind]
-                                print(json.dumps({'frontend_read':True,'present':actual is not None,
-                                    'matches_existing':actual is not None and round(actual,2)==number(value(rows,r,c))}),flush=True)
-                            except Exception as fallback:
-                                print(json.dumps({'frontend_error':safe_error(fallback)}),flush=True)
                         if kind!='invoices':
                             try:
                                 raw=bi_rows(sources.bi.read(kind,branch,day))
