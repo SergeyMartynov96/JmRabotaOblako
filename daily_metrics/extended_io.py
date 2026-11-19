@@ -47,13 +47,9 @@ class BIReports:
         if self._auth_error is not None:raise self._auth_error
         print('BI: authenticating SU session',flush=True)
         self.client.ensure_authenticated()
-        print('BI: reading accounting menu',flush=True)
-        # The SU menu issues the accounting login; credentials are never sent to logs.
-        html=self.client.request(BI_INDEX)
-        doc=BILinks();doc.feed(html)
-        links=[href for href in doc.links if urllib.parse.urlsplit(href).hostname=='bi.lifemart.ru'
-               and urllib.parse.urlsplit(href).path=='/login/accounting']
-        if not links:raise StructureError('BI accounting link unavailable')
+        # This accounting route and dashboard were verified from the SU menu.
+        # Avoid reloading the slow menu for every cloud session.
+        links=[BI+'/login/accounting?'+urllib.parse.urlencode({'next':'/superset/dashboard/37/'})]
         print('BI: opening accounting session',flush=True)
         context=self.browser.new_context()
         try:
