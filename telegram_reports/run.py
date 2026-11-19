@@ -39,10 +39,10 @@ def osa_yesterday(payload,day):
 
 def caption(branch,day,osa):
     return (
-        f'{branch.name}\n{day:%d.%m.%Y}\n1. Приходные накладные\n2. Списания по причинам\n3. Топ списаний шт/руб\n'
+        f'{branch.name}\n1. Приходные накладные\n2. Списания по причинам\n3. Топ списаний шт/руб\n'
         '4. %УИ2 по неделе\n5. УВ по позициям\n6. УВ по стоп-статусу\n'
-        '7. OSA 11:00 за вчера — '+format(osa[0],'.1f').replace('.',',')+'%\n'
-        '8. OSA 20:00 за вчера — '+format(osa[1],'.1f').replace('.',',')+'%')
+        '7. OSA 11:00 '+format(osa[0],'.1f').replace('.',',')+'%\n'
+        '8. OSA 20:00 '+format(osa[1],'.1f').replace('.',',')+'%')
 
 
 def collect_bi(browser,bi,charts,branch,day,folder):

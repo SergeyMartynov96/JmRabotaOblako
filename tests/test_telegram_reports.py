@@ -206,3 +206,16 @@ class WorkerTerminationTests(unittest.TestCase):
     def test_only_owned_descendants_are_selected(self):
         from telegram_reports.security import worker_descendants
         self.assertEqual(worker_descendants(10,[(1,0),(10,1),(11,10),(12,11),(50,1),(51,50)]),[12,11])
+
+class CaptionFormatTests(unittest.TestCase):
+    def test_caption_has_no_date_or_yesterday_prefix(self):
+        import datetime as dt
+        from decimal import Decimal
+        from types import SimpleNamespace
+        from telegram_reports.run import caption
+        result=caption(SimpleNamespace(name='TEST'),dt.date(2030,1,2),[Decimal('82.1'),Decimal('46.2')])
+        self.assertTrue(result.startswith('TEST\n1. Приходные накладные'))
+        self.assertNotIn('02.01',result)
+        self.assertNotIn('за вчера',result)
+        self.assertIn('7. OSA 11:00 82,1%',result)
+        self.assertIn('8. OSA 20:00 46,2%',result)
