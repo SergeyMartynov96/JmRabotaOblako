@@ -1,7 +1,8 @@
 """Manual read-only source discovery. Logs schema/labels only, never source data or URLs with tokens."""
 import json,re,urllib.parse,shutil
 from html.parser import HTMLParser
-from .io import SUReports,SU
+from .io import SU
+from scripts.cloud_readonly_test import ReadOnlySU
 
 BI_INDEX='/handbook/biSupersetSettings/index'
 INVOICE='/turnover/waybill/report'
@@ -38,9 +39,12 @@ def safe_path(url):
     return {'host':u.hostname,'path':re.sub(r'/[^/]{60,}', '/<opaque>',u.path),'query_keys':list(urllib.parse.parse_qs(u.query))}
 
 def main():
-    client=SUReports();client.ensure_authenticated()
+    print(json.dumps({'stage':'login'}),flush=True)
+    client=ReadOnlySU();client.login()
+    print(json.dumps({'stage':'authenticated'}),flush=True)
     parsed={};targets={}
     for path in (INVOICE,BI_INDEX):
+        print(json.dumps({'stage':'read_schema','path':path}),flush=True)
         with client.opener.open(SU+path,timeout=120) as response:html=response.read().decode()
         p=Page();p.feed(html);parsed[path]=p
         if path==INVOICE:
@@ -71,4 +75,8 @@ def main():
             except Exception as exc:print(json.dumps({'dashboard':title,'error':type(exc).__name__}),flush=True)
         browser.close()
 
-if __name__=='__main__':main()
+if __name__=='__main__':
+    try:main()
+    except Exception as exc:
+        print(json.dumps({'probe_error':type(exc).__name__}),flush=True)
+        raise SystemExit(1) from None
