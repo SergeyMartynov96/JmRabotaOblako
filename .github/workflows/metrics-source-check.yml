@@ -1,0 +1,20 @@
+name: LifeMart additional sources check
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sources:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      LIFEMART_LOGIN: ${{ secrets.LIFEMART_LOGIN }}
+      LIFEMART_PASSWORD: ${{ secrets.LIFEMART_PASSWORD }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install browser API
+        run: python3 -m pip install playwright==1.62.0
+      - name: Inspect permitted report schemas without writes
+        run: python3 -m daily_metrics.source_probe
