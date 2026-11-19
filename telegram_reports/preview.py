@@ -10,6 +10,9 @@ from daily_metrics.source_probe import safe_error
 from .core import constrained_query,validate_data
 from .render import capture_chart
 from .security import seal_images
+from .session import ReportSUReports
+from .catalog import ReportCharts
+from .core import weekly_period
 
 
 def main():
@@ -20,15 +23,16 @@ def main():
         try:
             with sync_playwright() as pw:
                 browser=pw.chromium.launch(headless=True,executable_path=shutil.which('google-chrome'))
-                bi=BIReports(browser,SUReports())
+                client=ReportSUReports();client.ensure_authenticated()
+                bi=BIReports(browser,client)
                 try:
-                    form,saved=bi.template('reasons');day=reporting_day()
-                    query=constrained_query(form,saved,BRANCHES[1],day,day+__import__('datetime').timedelta(days=1),241)
-                    payload=bi.api('/api/v1/chart/data',query);rows=validate_data(payload)
-                    print(json.dumps({'stage':'validated_data','row_count':len(rows),'columns':list(rows[0])}),flush=True)
-                    (folder/'source.json').write_text(json.dumps({'form':query['form_data'],'payload':payload},ensure_ascii=False))
-                    capture_chart(bi,query['form_data'],payload,folder/'reasons.png',width=900,height=500)
-                    print('{"native_chart_captured":true}',flush=True)
+                    bi.authenticate();charts=ReportCharts(bi);day=reporting_day()
+                    start,end=weekly_period(day+__import__('datetime').timedelta(days=1))
+                    for kind in ('uv_stop','osa_food_japan'):
+                        form,payload=(charts.read_stop(BRANCHES[1],start,end) if kind=='uv_stop' else charts.read(kind,BRANCHES[1],start,end))
+                        (folder/(kind+'.json')).write_text(json.dumps({'form':form,'payload':payload},ensure_ascii=False))
+                        capture_chart(bi,form,payload,folder/(kind+'.png'),width=1800 if kind=='uv_stop' else 900,height=500)
+                        print(json.dumps({'source':kind,'native_chart_captured':True}),flush=True)
                 finally:bi.close();browser.close()
         finally:seal_images(folder,public,'review.enc.json')
 

@@ -29,10 +29,7 @@ def capture_chart(bi,form,payload,destination,width=900,height=430):
           const root=document.querySelector('.chart-container') || document.querySelector('[data-test="chart-container"]') || document.body;
           return !!root.querySelector('svg path,svg rect,canvas,table td') && !root.querySelector('[data-test="loading-indicator"]');
         }""",timeout=remaining())
-        page.evaluate("() => document.fonts.ready")
-        if str(form.get('slice_id')) in ('3695','3696','3697','3698'):
-            for label in ('OSA "На 17:00"','OSA "На вечер"','OSA "На утро"'):
-                page.get_by_text(label,exact=True).first.click(timeout=remaining())
+        page.wait_for_function("() => document.fonts.status==='loaded'",timeout=remaining())
         # D3/ECharts animate SVG attributes in JavaScript; CSS alone does not stop
         # those transitions. Require the actual rendered image to settle.
         previous=None;stable=0

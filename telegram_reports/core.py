@@ -21,11 +21,19 @@ def constrained_query(form,saved,branch,start,end,dashboard,osa=False):
         if osa:
             metrics=[m for m in q.get('metrics',[]) if (m.get('label') if isinstance(m,dict) else m) in OSA_METRICS]
             if len(metrics)!=2:raise StructureError('OSA report requires exactly 11:00 and 20:00')
-            # Keep native pivot ordering and original five-series colors. The three
-            # unwanted series are disabled through the real legend before capture.
+            q['metrics']=metrics
+            q['orderby']=[[OSA_METRICS[0],False]]
+            # Preserve native chronological pivot ordering, selecting only the two
+            # required snapshots in both the query and its post-processing.
+            for operation in q.get('post_processing',[]):
+                if operation.get('operation')=='pivot':
+                    aggregates=operation.get('options',{}).get('aggregates')
+                    if aggregates is not None:
+                        operation['options']['aggregates']={k:v for k,v in aggregates.items() if k in OSA_METRICS}
     display=copy.deepcopy(form)
     display.update({'dashboardId':dashboard,'time_range':period,'time_grain_sqla':'P1D',
         'extra_form_data':{'time_range':period,'filters':[{'col':'title','op':'IN','val':[branch.title]}]}})
+    if osa:display['metrics']=query['queries'][0]['metrics']
     query['form_data']=display
     return query
 
