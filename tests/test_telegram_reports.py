@@ -172,7 +172,7 @@ class CleanupDeadlineTests(unittest.TestCase):
             timer.assert_called_once()
             seconds,callback=timer.call_args.args
             self.assertEqual(seconds,20)
-            with patch('telegram_reports.security.os._exit') as stop,contextlib.redirect_stdout(io.StringIO()):callback()
+            with patch('telegram_reports.security.os._exit') as stop,patch('subprocess.check_output',return_value=b''),contextlib.redirect_stdout(io.StringIO()):callback()
             seal.assert_called_once();stop.assert_called_once_with(1)
 
 class SUAuthenticationTests(unittest.TestCase):
@@ -201,3 +201,8 @@ class SUAuthenticationTests(unittest.TestCase):
         client.opener.open.side_effect=urllib.error.HTTPError('https://example.invalid',403,'Denied',{},None)
         with self.assertRaises(urllib.error.HTTPError):client.request('/site/login')
         self.assertEqual(client.opener.open.call_count,1)
+
+class WorkerTerminationTests(unittest.TestCase):
+    def test_only_owned_descendants_are_selected(self):
+        from telegram_reports.security import worker_descendants
+        self.assertEqual(worker_descendants(10,[(1,0),(10,1),(11,10),(12,11),(50,1),(51,50)]),[12,11])

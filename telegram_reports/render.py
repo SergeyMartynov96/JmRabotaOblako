@@ -3,9 +3,10 @@ import base64,html,json,urllib.parse,time
 from pathlib import Path
 from daily_metrics.extended_io import BI
 from daily_metrics.core import StructureError
-from .security import arm_failed_cleanup
+from .security import arm_failed_cleanup,bounded_bi_operation
 
 
+@bounded_bi_operation
 def active_page(bi):
     page=getattr(bi,'report_page',None)
     if page is None or page.is_closed():
@@ -36,6 +37,7 @@ def load_explore(bi,page,form,height,deadline):
     finally:page.unroute(pattern,document_response)
 
 
+@bounded_bi_operation
 def capture_chart(bi,form,payload,destination,width=900,height=430):
     deadline=time.monotonic()+180
     def remaining():return max(1,int((deadline-time.monotonic())*1000))
@@ -107,6 +109,7 @@ def compose(browser,panels,destination,columns=1,heading=None,width=1800):
     finally:context.close()
 
 
+@bounded_bi_operation
 def query_from_renderer(bi,form):
     """Ask Superset's own chart plugin to build a missing saved query; block execution."""
     page=active_page(bi);captured=[]

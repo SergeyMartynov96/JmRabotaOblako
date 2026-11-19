@@ -31,16 +31,47 @@ def seal_tree(root,public_key_b64,destination):
         seal_images(flat,public_key_b64,destination)
 
 
+def worker_descendants(parent,rows):
+    owned={parent};children=[]
+    while True:
+        found=[pid for pid,ppid in rows if ppid in owned and pid not in owned]
+        if not found:break
+        owned.update(found);children.extend(found)
+    return list(reversed(children))
+
+
+def force_abort(bi):
+    import signal,subprocess
+    try:
+        callback=getattr(bi,'seal_before_exit',None)
+        if callback:callback()
+    finally:
+        # Stop only this disposable worker's own browser/driver descendants.
+        # Otherwise a surviving driver can keep the Actions output pipe open.
+        try:
+            raw=subprocess.check_output(['ps','-eo','pid=,ppid='],timeout=3).decode()
+            rows=[tuple(map(int,line.split())) for line in raw.splitlines() if len(line.split())==2]
+            for pid in worker_descendants(os.getpid(),rows):
+                try:os.kill(pid,signal.SIGKILL)
+                except ProcessLookupError:pass
+        finally:
+            print('{"report_failed":true,"browser_worker_aborted":true}',flush=True)
+            os._exit(1)
+
+
 def arm_failed_cleanup(bi):
     """A stalled disposable browser must not turn a 3-minute error into 17 minutes."""
     import threading
     if getattr(bi,'cleanup_watchdog',None) is not None:return
-    def stop():
-        try:
-            callback=getattr(bi,'seal_before_exit',None)
-            if callback:callback()
-        finally:
-            print('{"report_failed":true,"cleanup_aborted_after_seconds":20}',flush=True)
-            os._exit(1)
-    timer=threading.Timer(20,stop);timer.daemon=True
+    timer=threading.Timer(20,lambda:force_abort(bi));timer.daemon=True
     bi.cleanup_watchdog=timer;timer.start()
+
+
+def bounded_bi_operation(function):
+    import functools,threading
+    @functools.wraps(function)
+    def wrapped(bi,*args,**kwargs):
+        timer=threading.Timer(200,lambda:force_abort(bi));timer.daemon=True;timer.start()
+        try:return function(bi,*args,**kwargs)
+        finally:timer.cancel()
+    return wrapped
