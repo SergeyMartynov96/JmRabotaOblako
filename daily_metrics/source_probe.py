@@ -49,7 +49,12 @@ def main():
         p=Page();p.feed(html);parsed[path]=p
         if path==INVOICE:
             matches=[{'field':field,'id':ident,'name':name} for field,ident,name in p.options if any(alias.casefold() in name.casefold() for alias in ALIASES)]
-            print(json.dumps({'invoice_forms':p.forms,'invoice_fields':p.fields,'supplier_options':matches},ensure_ascii=False),flush=True)
+            hints=[]
+            for marker in ('contractor_id','autocomplete'):
+                for match in list(re.finditer(re.escape(marker),html))[-6:]:
+                    snippet=html[max(0,match.start()-90):match.end()+190]
+                    hints.append(snippet)
+            print(json.dumps({'invoice_forms':p.forms,'invoice_fields':p.fields,'supplier_options':matches,'autocomplete_hints':hints},ensure_ascii=False),flush=True)
         else:
             for row in p.rows:
                 for title in TARGETS:
@@ -64,14 +69,32 @@ def main():
         for handler in client.opener.handlers:
             if hasattr(handler,'cookiejar'):
                 context.add_cookies([{'name':c.name,'value':c.value,'domain':c.domain,'path':c.path,'secure':c.secure} for c in handler.cookiejar])
+        page=context.new_page()
+        page.goto(next(iter(targets.values())),wait_until='domcontentloaded',timeout=120000)
+        print(json.dumps({'stage':'bi_authenticated','location':safe_path(page.url)}),flush=True)
         for title,url in targets.items():
             try:
-                page=context.new_page();page.goto(url,wait_until='domcontentloaded',timeout=120000)
-                page.wait_for_timeout(2500)
-                # Only visible headings, chart labels, and form-control names; no values/tokens.
-                info=page.evaluate('''() => ({headings:[...document.querySelectorAll('h1,h2,h3')].map(x=>x.textContent.trim()),charts:[...document.querySelectorAll('.dashboard-component-chart-holder')].map(x=>({id:x.id,title:x.querySelector('.header-title')?.textContent})),frames:[...document.querySelectorAll('iframe')].map(x=>({src:x.getAttribute('src')?.split('?')[0]})),app:!!document.querySelector('#app'),bootstrapAttributes:document.querySelector('#app')?.getAttributeNames().filter(x=>x.includes('bootstrap'))})''')
-                print(json.dumps({'dashboard':title,'location':safe_path(page.url),'schema':info},ensure_ascii=False),flush=True)
-                page.close()
+                nxt=urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get('next',[''])[0]
+                ident=int(re.search(r'/dashboard/(\d+)',urllib.parse.unquote(nxt)).group(1))
+                response=context.request.get(f'https://bi.lifemart.ru/api/v1/dashboard/{ident}',timeout=90000)
+                payload=response.json().get('result',{})
+                metadata=payload.get('json_metadata',{})
+                if isinstance(metadata,str):metadata=json.loads(metadata)
+                filters=[{k:f.get(k) for k in ('id','name','filterType','targets')} for f in metadata.get('native_filter_configuration',[])]
+                response=context.request.get(f'https://bi.lifemart.ru/api/v1/dashboard/{ident}/charts',timeout=90000)
+                charts=response.json().get('result',[])
+                wanted=[]
+                for chart in charts:
+                    name=chart.get('slice_name','')
+                    if not (('Период. Магазины. %' in name) or ('Причины. Период, %' in name) or ('in_stock Готовая еда + Япония' in name)):continue
+                    fd=chart.get('form_data') or chart.get('params') or {}
+                    if isinstance(fd,str):fd=json.loads(fd)
+                    fields={k:fd.get(k) for k in ('datasource','viz_type','groupby','columns','rows','row_pivots','col_pivots','granularity_sqla','x_axis','time_grain_sqla','y_axis_format','value_format','number_format')}
+                    metrics=fd.get('metrics',[])
+                    fields['metrics']=[m if isinstance(m,str) else {'label':m.get('label'),'expressionType':m.get('expressionType')} for m in metrics]
+                    fields['filter_columns']=[f.get('subject') for f in fd.get('adhoc_filters',[])]
+                    wanted.append({'id':chart.get('id'),'title':name,'chart_keys':list(chart),'form_keys':list(fd),'fields':fields})
+                print(json.dumps({'dashboard':title,'id':ident,'api_status':response.status,'filters':filters,'charts':wanted},ensure_ascii=False),flush=True)
             except Exception as exc:print(json.dumps({'dashboard':title,'error':type(exc).__name__}),flush=True)
         browser.close()
 
