@@ -80,8 +80,10 @@ class BIReports:
             if not token:raise StructureError('BI read token unavailable')
             response=self.context.request.post(BI+path,data=data,
                 headers={'X-CSRFToken':token,'Referer':BI+'/'},timeout=180000)
-        if response.status!=200:raise StructureError('BI read unsuccessful HTTP '+str(response.status)+' at '+path)
         payload=response.json()
+        if response.status!=200:
+            types=','.join(str(e.get('error_type','unknown')) for e in payload.get('errors',[]) if isinstance(e,dict))
+            raise StructureError('BI read unsuccessful HTTP '+str(response.status)+' at '+path+' '+types)
         if payload.get('errors'):raise StructureError('BI query rejected: '+','.join(str(e.get('error_type','unknown')) for e in payload['errors']))
         return payload
 
@@ -113,6 +115,10 @@ class BIReports:
             try:
                 form,context=self.template(kind)
                 query=daily_query(context,day,branch.title)
+                query['form_data']={**form,'dashboardId':CHARTS[kind][0],
+                    'time_range':query['queries'][0]['time_range'],'time_grain_sqla':'P1D',
+                    'extra_form_data':{'time_range':query['queries'][0]['time_range'],
+                                       'filters':[{'col':'title','op':'IN','val':[branch.title]}]}}
                 self.cache[cache_key]=self.api('/api/v1/chart/data',query)
             except Exception as exc:self.cache[cache_key]=exc
         result=self.cache[cache_key]

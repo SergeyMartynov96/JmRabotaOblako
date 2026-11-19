@@ -15,7 +15,7 @@ def main():
         browser=pw.chromium.launch(headless=True,executable_path=shutil.which('google-chrome'))
         sources=ExtraSources(browser,client)
         try:
-            for kind in ('uv','osa','reasons'):
+            for kind in ('uv',):
                 print(json.dumps({'stage':'inspect','source':kind}),flush=True)
                 try:
                     form,context=sources.bi.template(kind)
@@ -23,11 +23,11 @@ def main():
                         'queries':[{k:q.get(k) for k in ('columns','granularity','is_timeseries','post_processing')} for q in context.get('queries',[])]},ensure_ascii=False),flush=True)
                 except Exception as exc:
                     print(json.dumps({'source':kind,'template_error':type(exc).__name__}),flush=True)
-            for branch in BRANCHES:
+            for branch in (BRANCHES[1],):
                 rows=csv_sheet(branch.book,branch.revenue_gid)
                 row,header=target_candidates(rows,day,branch.newest_first)[0]
                 layout=extra_targets(rows,header,row,day)
-                for kind in ('uv','osa','invoices','reasons'):
+                for kind in ('uv',):
                     print(json.dumps({'stage':'read','branch':branch.name,'source':kind}),flush=True)
                     try:
                         result=sources.read(kind,branch,day)
