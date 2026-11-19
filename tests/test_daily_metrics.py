@@ -80,7 +80,7 @@ class SharedRevenueReport(unittest.TestCase):
         from daily_metrics.io import SUReports,REVENUE
         from daily_metrics.config import BRANCHES
         from unittest.mock import Mock
-        client=SUReports();client.request=Mock(return_value='report')
+        client=SUReports();client.login=Mock();client.request=Mock(return_value='report')
         for branch in BRANCHES:self.assertEqual(client.revenue(branch,DAY),'report')
         client.request.assert_called_once()
         self.assertEqual(client.request.call_args.args[1]['department[]'],['115','153','357'])
@@ -88,7 +88,7 @@ class SharedRevenueReport(unittest.TestCase):
         from daily_metrics.io import SUReports
         from daily_metrics.config import BRANCHES
         from unittest.mock import Mock
-        client=SUReports();client.request=Mock(side_effect=TimeoutError())
+        client=SUReports();client.login=Mock();client.request=Mock(side_effect=TimeoutError())
         for branch in BRANCHES:
             with self.assertRaises(TimeoutError):client.revenue(branch,DAY)
         client.request.assert_called_once()
@@ -115,3 +115,35 @@ class PercentEntryRegression(unittest.TestCase):
         sheet.page.keyboard.type.assert_not_called()
         sheet.page.evaluate.assert_called_once_with('(text) => navigator.clipboard.writeText(text)','4,8%')
         sheet.page.keyboard.press.assert_any_call('Control+V')
+
+class LazySUAuthentication(unittest.TestCase):
+    def test_already_filled_run_never_attempts_su_login(self):
+        from daily_metrics import run
+        from unittest.mock import Mock,patch
+        import types,sys
+        now=dt.datetime.now(run.TZ).date().isoformat()
+        client=Mock();pw=Mock();manager=Mock()
+        manager.__enter__=Mock(return_value=pw);manager.__exit__=Mock(return_value=False)
+        module=types.ModuleType('playwright.sync_api');module.sync_playwright=Mock(return_value=manager)
+        with patch.dict('os.environ',{'GITHUB_ACTIONS':'true','EXPECTED_RUN_DATE':now,'GITHUB_STEP_SUMMARY':''}),patch.object(sys,'argv',['metrics','--branch','М42']),patch.dict(sys.modules,{'playwright.sync_api':module}),patch.object(run,'SUReports',return_value=client),patch.object(run,'fill_branch',return_value=[]):
+            run.main()
+        client.login.assert_not_called()
+    def test_login_is_shared_by_required_sources(self):
+        from daily_metrics.io import SUReports
+        from daily_metrics.config import BRANCHES
+        from unittest.mock import Mock
+        client=SUReports();client.login=Mock();client.request=Mock(return_value='report')
+        client.revenue(BRANCHES[0],DAY)
+        client.writeoff(BRANCHES[0],DAY)
+        client.revenue(BRANCHES[1],DAY)
+        client.login.assert_called_once()
+        self.assertEqual(client.request.call_count,2)
+    def test_failed_auth_not_repeated_by_other_branch_or_metric(self):
+        from daily_metrics.io import SUReports
+        from daily_metrics.config import BRANCHES
+        from unittest.mock import Mock
+        client=SUReports();client.login=Mock(side_effect=TimeoutError());client.request=Mock()
+        for branch in BRANCHES:
+            with self.assertRaises(TimeoutError):client.revenue(branch,DAY)
+            with self.assertRaises(TimeoutError):client.writeoff(branch,DAY)
+        client.login.assert_called_once();client.request.assert_not_called()

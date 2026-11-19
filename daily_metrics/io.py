@@ -53,6 +53,8 @@ class SUReports:
     def __init__(self):
         self.opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
         self.revenue_cache={}
+        self._authenticated=False
+        self._login_error=None
     def request(self,path,data=None):
         if urllib.parse.urlsplit(path).path not in ('/site/login',REVENUE,WRITEOFF):
             raise ValueError('Only metrics read endpoints allowed')
@@ -73,11 +75,24 @@ class SUReports:
         html=self.request('/site/login',{'LoginForm[username]':username,'LoginForm[password]':password,'yt0':'Войти'})
         if 'LoginForm[password]' in html:
             raise StructureError('SU login failed')
+        self._authenticated=True
+    def ensure_authenticated(self):
+        if self._authenticated:
+            return
+        if self._login_error is not None:
+            raise self._login_error
+        try:
+            self.login()
+            self._authenticated=True
+        except Exception as exc:
+            self._login_error=exc
+            raise
     def revenue(self,branch,day):
         # One report with all three selected stores, matching the owner's manual workflow.
         # A failed request is not repeated for each branch in this same run.
         if day not in self.revenue_cache:
             try:
+                self.ensure_authenticated()
                 self.revenue_cache[day]=self.request(REVENUE,{'department[]':['115','153','357'],
                     'brandId':'','format':'1','date_s':day.strftime('%d.%m.%Y'),
                     'date_do':day.strftime('%d.%m.%Y'),'day_of_week[]':['all'],'night':'2'})
@@ -86,6 +101,7 @@ class SUReports:
         if isinstance(result,Exception):raise result
         return result
     def writeoff(self,branch,day):
+        self.ensure_authenticated()
         params={'WriteOffAct[create_date_from]':day.strftime('%d.%m.%Y'),
             'WriteOffAct[create_date_to]':day.strftime('%d.%m.%Y'),
             'WriteOffAct[search_project_id]':'2','WriteOffAct[department_id][]':[str(branch.department)],'yt6':'Сформировать'}
