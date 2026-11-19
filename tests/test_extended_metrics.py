@@ -93,3 +93,27 @@ class ReadOnlyBoundaries(unittest.TestCase):
         from unittest.mock import Mock
         reader=BIReports(Mock(),Mock());reader.authenticate=Mock()
         with self.assertRaises(StructureError):reader.api('/api/v1/chart/1',{'x':'1'})
+
+class InvoiceReport(unittest.TestCase):
+    def sample(self,date='18.11.2026 07:00',store='shop',supplier='Supplier'):
+        return '<table><tr><th>Дата и время приема товара</th><th>Подразделение</th><th>Контрагент</th><th>Сумма без НДС</th><th>Сумма с НДС</th></tr>'+f'<tr><td>{date}</td><td>{store}</td><td>{supplier}</td><td>100</td><td>105</td></tr><tr><td></td><td></td><td></td><td>100</td><td>105</td></tr></table>'
+    def test_vat_total_and_no_double_counting_footer(self):
+        from daily_metrics.extended_core import invoice_total
+        self.assertEqual(invoice_total(self.sample(),'shop',dt.date(2026,11,18),{1:'Supplier'}),105)
+    def test_other_day_store_supplier_and_partial_pages_rejected(self):
+        from daily_metrics.extended_core import invoice_total
+        for html in (self.sample(date='17.11.2026'),self.sample(store='other'),self.sample(supplier='other'),self.sample()+'<a href="?Waybill_page=2">2</a>'):
+            with self.assertRaises(StructureError):invoice_total(html,'shop',dt.date(2026,11,18),{1:'Supplier'})
+
+class BIWait(unittest.TestCase):
+    def test_each_data_request_has_three_minute_limit_and_detects_explicit_error(self):
+        from unittest.mock import Mock
+        from daily_metrics.extended_io import BIReports
+        reader=BIReports(Mock(),Mock());reader.authenticate=Mock();reader.context=Mock()
+        token=Mock(status=200);token.json.return_value={'result':'test-csrf'}
+        response=Mock(status=200);response.json.return_value={'errors':[{'error_type':'GENERIC_DB_ENGINE_ERROR'}]}
+        reader.context.request.get.return_value=token
+        reader.context.request.post.return_value=response
+        with self.assertRaisesRegex(StructureError,'GENERIC_DB_ENGINE_ERROR'):
+            reader.api('/api/v1/chart/data',{'queries':[]})
+        self.assertEqual(reader.context.request.post.call_args.kwargs['timeout'],180000)

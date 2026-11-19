@@ -27,10 +27,18 @@ class BILinks(HTMLParser):
 class BIReports:
     def __init__(self,browser,client):
         self.browser=browser;self.client=client;self.context=None
-        self.templates={};self.cache={}
+        self.templates={};self.cache={};self._auth_error=None
 
     def authenticate(self):
+        if self._auth_error is not None:raise self._auth_error
+        try:self._authenticate()
+        except Exception as exc:
+            self._auth_error=exc
+            raise
+
+    def _authenticate(self):
         if self.context is not None:return
+        if self._auth_error is not None:raise self._auth_error
         self.client.ensure_authenticated()
         # The SU menu issues the accounting login; credentials are never sent to logs.
         html=self.client.request(BI_INDEX)
@@ -48,7 +56,8 @@ class BIReports:
             if response.status!=200 or '/superset/' not in response.url:
                 raise StructureError('BI authentication failed')
             self.context=context
-        except Exception:
+        except Exception as exc:
+            self._auth_error=exc
             context.close();raise
 
     def api(self,path,data=None):
@@ -70,6 +79,13 @@ class BIReports:
         return payload
 
     def template(self,kind):
+        if isinstance(self.templates.get(kind),Exception):raise self.templates[kind]
+        try:return self._template(kind)
+        except Exception as exc:
+            self.templates[kind]=exc
+            raise
+
+    def _template(self,kind):
         if kind not in self.templates:
             dashboard,title=CHARTS[kind]
             charts=self.api(f'/api/v1/dashboard/{dashboard}/charts').get('result',[])
@@ -87,10 +103,14 @@ class BIReports:
     def read(self,kind,branch,day):
         cache_key=(kind,branch.department,day)
         if cache_key not in self.cache:
-            form,context=self.template(kind)
-            query=daily_query(context,day,branch.title)
-            self.cache[cache_key]=self.api('/api/v1/chart/data',query)
-        return self.cache[cache_key]
+            try:
+                form,context=self.template(kind)
+                query=daily_query(context,day,branch.title)
+                self.cache[cache_key]=self.api('/api/v1/chart/data',query)
+            except Exception as exc:self.cache[cache_key]=exc
+        result=self.cache[cache_key]
+        if isinstance(result,Exception):raise result
+        return result
 
     def close(self):
         if self.context is not None:self.context.close()
