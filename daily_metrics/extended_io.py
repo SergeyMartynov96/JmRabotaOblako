@@ -62,10 +62,11 @@ class BIReports:
             context.route('**/api/v1/chart/data*',abort_initial_charts)
             page=context.new_page()
             try:
-                response=page.goto(links[0],wait_until='domcontentloaded',timeout=180000)
-                if response is None or response.status!=200 or '/superset/' not in page.url:
+                response=page.goto(links[0],wait_until='commit',timeout=180000)
+                location=urllib.parse.urlsplit(page.url)
+                if response is None or response.status!=200 or location.hostname!='bi.lifemart.ru' or not location.path.startswith('/superset/'):
                     raise StructureError('BI authentication failed')
-                html=BILinks();html.feed(page.content());self.csrf=html.csrf
+                html=BILinks();html.feed(response.text());self.csrf=html.csrf
             finally:
                 page.close();context.unroute('**/api/v1/chart/data*',abort_initial_charts)
             self.context=context
@@ -122,6 +123,12 @@ class BIReports:
             try:
                 form,context=self.template(kind)
                 query=daily_query(context,day,branch.title)
+                if kind=='osa':
+                    # The daily sheet needs this one series, not the other four snapshots.
+                    q=query['queries'][0]
+                    metrics=[m for m in q.get('metrics',[]) if (m.get('label') if isinstance(m,dict) else m)=='OSA "На 20:00"']
+                    if len(metrics)!=1:raise StructureError('OSA 20:00 metric missing or duplicated')
+                    q['metrics']=metrics;q['post_processing']=[]
                 query['form_data']={**form,'dashboardId':CHARTS[kind][0],
                     'time_range':query['queries'][0]['time_range'],'time_grain_sqla':'P1D',
                     'extra_form_data':{'time_range':query['queries'][0]['time_range'],

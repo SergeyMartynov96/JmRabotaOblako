@@ -126,3 +126,20 @@ class BIDay(unittest.TestCase):
         self.assertEqual(bi_percent(payload,'UV','shop',dt.date(2026,11,18),'uv'),Decimal('19.5200'))
         with self.assertRaises(StructureError):bi_percent(payload,'UV','other',dt.date(2026,11,18),'uv')
         with self.assertRaises(StructureError):bi_percent(payload,'UV','shop',dt.date(2026,11,17),'uv')
+
+class OSASelection(unittest.TestCase):
+    def test_only_20_hour_series_is_requested_and_business_filters_retained(self):
+        from unittest.mock import Mock
+        from daily_metrics.extended_io import BIReports
+        reader=BIReports(Mock(),Mock())
+        reader.template=Mock(return_value=({'slice_id':3696},{'queries':[{
+            'metrics':['OSA "На 11:00"','OSA "На 20:00"','OSA "На утро"'],
+            'filters':[{'col':'in_stock','op':'==','val':1}],
+            'post_processing':[{'operation':'pivot'}]}]}))
+        reader.api=Mock(return_value={'result':[]})
+        branch=Mock(department=153,title='shop')
+        reader.read('osa',branch,dt.date(2026,11,18))
+        query=reader.api.call_args.args[1]['queries'][0]
+        self.assertEqual(query['metrics'],['OSA "На 20:00"'])
+        self.assertIn({'col':'in_stock','op':'==','val':1},query['filters'])
+        self.assertEqual(query['post_processing'],[])
