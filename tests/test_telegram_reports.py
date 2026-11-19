@@ -159,3 +159,18 @@ class CompleteReportTests(unittest.TestCase):
         self.assertEqual(context.new_page.call_count,1)
         self.assertEqual(page.bring_to_front.call_count,2)
         page.close.assert_not_called()
+
+class CleanupDeadlineTests(unittest.TestCase):
+    def test_failed_browser_cleanup_has_one_twenty_second_watchdog(self):
+        import contextlib,io
+        from types import SimpleNamespace
+        from unittest.mock import Mock,patch
+        from telegram_reports.security import arm_failed_cleanup
+        seal=Mock();bi=SimpleNamespace(seal_before_exit=seal)
+        with patch('threading.Timer') as timer:
+            arm_failed_cleanup(bi);arm_failed_cleanup(bi)
+            timer.assert_called_once()
+            seconds,callback=timer.call_args.args
+            self.assertEqual(seconds,20)
+            with patch('telegram_reports.security.os._exit') as stop,contextlib.redirect_stdout(io.StringIO()):callback()
+            seal.assert_called_once();stop.assert_called_once_with(1)

@@ -24,11 +24,15 @@ def load_explore(bi,page,form,height,deadline):
         raise StructureError('BI renderer document authentication failed')
     document=response.text()
     if '<html' not in document.casefold():raise StructureError('BI renderer HTML missing')
-    def document_response(route):route.fulfill(status=200,content_type='text/html; charset=utf-8',body=document)
+    headers={k:v for k,v in response.headers.items() if k.casefold() not in ('content-length','content-encoding','transfer-encoding','connection')}
+    def document_response(route):route.fulfill(status=200,headers=headers,body=document)
     pattern='**/superset/explore/**'
     page.route(pattern,document_response)
     try:
         return page.goto(url,wait_until='commit',timeout=remaining())
+    except Exception:
+        arm_failed_cleanup(bi)
+        raise
     finally:page.unroute(pattern,document_response)
 
 
