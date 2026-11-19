@@ -45,3 +45,14 @@ def validate_data(payload):
     rows=bi_rows(payload)
     if not rows:raise StructureError('Report returned no data; blank image not permitted')
     return rows
+
+
+def validate_scope(result,start,end):
+    """Require the BI server itself to confirm the receiving store filter and dates."""
+    if result.get('error') or result.get('errors') or result.get('status')!='success':
+        raise StructureError('BI report was not successful')
+    if result.get('rejected_filters') or not any(f.get('column')=='title' for f in result.get('applied_filters',[])):
+        raise StructureError('BI did not apply the selected store filter')
+    for field,date in (('from_dttm',start),('to_dttm',end)):
+        expected=dt.datetime.combine(date,dt.time(),dt.timezone.utc).timestamp()*1000
+        if result.get(field)!=expected:raise StructureError('BI returned a different report period')

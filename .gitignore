@@ -8,3 +8,7 @@ __pycache__/
 .secrets/
 credentials*.json
 *.cookies
+
+# Private report runtime outputs.
+/review.enc.json
+/telegram-receipts/

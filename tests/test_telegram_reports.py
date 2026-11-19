@@ -101,3 +101,16 @@ class TimerTests(unittest.TestCase):
                        {'created_at':'2026-11-19T03:00:00Z'},{'head_repository':{'full_name':'foreign/repo'}}):
             self.assertIsNone(due_time(self.event(**change),now,'owner/repo'))
         with self.assertRaises(ValueError):due_time(self.event(),now.replace(hour=10),'owner/repo')
+
+class ScopeValidationTests(unittest.TestCase):
+    def test_server_must_confirm_filter_and_exact_range(self):
+        import datetime as dt
+        from telegram_reports.core import validate_scope
+        from daily_metrics.core import StructureError
+        start=dt.date(2026,11,18);end=dt.date(2026,11,19)
+        valid={'status':'success','applied_filters':[{'column':'title'}],'rejected_filters':[],
+            'from_dttm':1794960000000.0,'to_dttm':1795046400000.0}
+        validate_scope(valid,start,end)
+        for change in ({'applied_filters':[]},{'rejected_filters':[{'column':'title'}]},
+                       {'from_dttm':1794787200000.0},{'status':'failed'}):
+            with self.assertRaises(StructureError):validate_scope({**valid,**change},start,end)

@@ -1,6 +1,6 @@
 """Resolve only exact approved chart titles, then verify saved query metadata."""
 from daily_metrics.core import StructureError
-from .core import saved_chart,constrained_query,validate_data
+from .core import saved_chart,constrained_query,validate_data,validate_scope
 
 CHARTS={
  'reasons':(241,'Списания. Причины. Период, %'),
@@ -65,6 +65,7 @@ class ReportCharts:
         if kind=='uv_stop':form['bar_stacked']=False
         payload=self.bi.api('/api/v1/chart/data',query)
         validate_data(payload)
+        validate_scope(payload['result'][0],start,end)
         return form,payload
 
     def read_stop(self,branch,start,end):
@@ -78,5 +79,6 @@ class ReportCharts:
         response=self.bi.context.request.get(BI+'/superset/explore_json/?'+urllib.parse.urlencode({'form_data':json.dumps(form,ensure_ascii=False),'force':'true'}),timeout=180000)
         if response.status!=200:raise StructureError('BI stop-status HTTP '+str(response.status))
         payload=response.json()
+        validate_scope(payload,start,end)
         if payload.get('error') or not payload.get('data'):raise StructureError('BI stop-status data unavailable')
         return form,{'legacy_payload':payload}
