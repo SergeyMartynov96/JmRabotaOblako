@@ -45,13 +45,16 @@ class BIReports:
     def _authenticate(self):
         if self.context is not None:return
         if self._auth_error is not None:raise self._auth_error
+        print('BI: authenticating SU session',flush=True)
         self.client.ensure_authenticated()
+        print('BI: reading accounting menu',flush=True)
         # The SU menu issues the accounting login; credentials are never sent to logs.
         html=self.client.request(BI_INDEX)
         doc=BILinks();doc.feed(html)
         links=[href for href in doc.links if urllib.parse.urlsplit(href).hostname=='bi.lifemart.ru'
                and urllib.parse.urlsplit(href).path=='/login/accounting']
         if not links:raise StructureError('BI accounting link unavailable')
+        print('BI: opening accounting session',flush=True)
         context=self.browser.new_context()
         try:
             for handler in self.client.opener.handlers:
@@ -63,6 +66,7 @@ class BIReports:
                 raise StructureError('BI authentication failed')
             html=BILinks();html.feed(response.text());self.csrf=html.csrf
             self.context=context
+            print('BI: session authenticated',flush=True)
         except Exception as exc:
             self._auth_error=exc
             context.close();raise
