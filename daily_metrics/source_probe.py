@@ -8,6 +8,14 @@ from .extended_core import extra_targets,bi_rows
 from .core import target_candidates,number,value,money
 
 
+def safe_error(exc):
+    if type(exc).__name__=='StructureError':return str(exc)
+    message=str(exc).casefold()
+    for marker in ('econnreset','enotfound','socket hang up','invalid url','too many redirects','err_connection','err_name_not_resolved','err_timed_out','certificate'):
+        if marker in message:return type(exc).__name__+': '+marker
+    return type(exc).__name__
+
+
 def main():
     from playwright.sync_api import sync_playwright
     day=reporting_day();client=SUReports()
@@ -22,7 +30,7 @@ def main():
                     print(json.dumps({'source':kind,'slice_id':form.get('slice_id'),'value_format':form.get('valueFormat'),'csrf_html':bool(sources.bi.csrf),
                         'queries':[{k:q.get(k) for k in ('columns','granularity','is_timeseries','post_processing')} for q in context.get('queries',[])]},ensure_ascii=False),flush=True)
                 except Exception as exc:
-                    print(json.dumps({'source':kind,'template_error':type(exc).__name__}),flush=True)
+                    print(json.dumps({'source':kind,'template_error':safe_error(exc)}),flush=True)
             for branch in (BRANCHES[1],):
                 rows=csv_sheet(branch.book,branch.revenue_gid)
                 row,header=target_candidates(rows,day,branch.newest_first)[0]
@@ -45,7 +53,16 @@ def main():
                                 info['matches_existing']=actual==expected
                         print(json.dumps(info,ensure_ascii=False),flush=True)
                     except Exception as exc:
-                        print(json.dumps({'branch':branch.name,'source':kind,'error':str(exc) if type(exc).__name__=='StructureError' else type(exc).__name__}),flush=True)
+                        print(json.dumps({'branch':branch.name,'source':kind,'error':safe_error(exc)}),flush=True)
+                        if kind=='uv' and '403' in str(exc):
+                            try:
+                                from .frontend_probe import read_uv_from_frontend
+                                actual=read_uv_from_frontend(sources.bi,branch,day)
+                                r,c=layout[kind]
+                                print(json.dumps({'frontend_read':True,'present':actual is not None,
+                                    'matches_existing':actual is not None and round(actual,2)==number(value(rows,r,c))}),flush=True)
+                            except Exception as fallback:
+                                print(json.dumps({'frontend_error':safe_error(fallback)}),flush=True)
                         if kind!='invoices':
                             try:
                                 raw=bi_rows(sources.bi.read(kind,branch,day))

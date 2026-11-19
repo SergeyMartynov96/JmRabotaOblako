@@ -113,6 +113,13 @@ def bi_percent(payload,metric,title,day,kind):
     if len(rows)!=1:raise StructureError('BI day or store not unique')
     row=rows[0]
     if 'title' in row and row['title']!=title:raise StructureError('Foreign BI store')
+    if '__timestamp' in row:
+        raw=row['__timestamp']
+        try:
+            observed=(dt.datetime.fromtimestamp(float(raw)/1000,dt.timezone.utc).date()
+                      if isinstance(raw,(int,float)) else dt.datetime.fromisoformat(str(raw).replace('Z','+00:00')).date())
+        except (ValueError,TypeError,OverflowError):raise StructureError('BI date unavailable') from None
+        if observed!=day:raise StructureError('Foreign BI report date')
     if metric not in row:raise StructureError('BI metric missing')
     result=percentage_points(row[metric])
     if kind=='osa' and result is not None and result>100:raise StructureError('OSA outside 0..100')

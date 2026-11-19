@@ -117,3 +117,12 @@ class BIWait(unittest.TestCase):
         with self.assertRaisesRegex(StructureError,'GENERIC_DB_ENGINE_ERROR'):
             reader.api('/api/v1/chart/data',{'queries':[]})
         self.assertEqual(reader.context.request.post.call_args.kwargs['timeout'],180000)
+
+class BIDay(unittest.TestCase):
+    def test_number_is_accepted_only_for_selected_store_and_day(self):
+        from daily_metrics.extended_core import bi_percent
+        from decimal import Decimal
+        payload={'result':[{'status':'success','data':[{'title':'shop','__timestamp':'2026-11-18T00:00:00','UV':.1952}]}]}
+        self.assertEqual(bi_percent(payload,'UV','shop',dt.date(2026,11,18),'uv'),Decimal('19.5200'))
+        with self.assertRaises(StructureError):bi_percent(payload,'UV','other',dt.date(2026,11,18),'uv')
+        with self.assertRaises(StructureError):bi_percent(payload,'UV','shop',dt.date(2026,11,17),'uv')

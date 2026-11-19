@@ -57,10 +57,17 @@ class BIReports:
                 if hasattr(handler,'cookiejar'):
                     context.add_cookies([{'name':c.name,'value':c.value,'domain':c.domain,'path':c.path,'secure':c.secure}
                                          for c in handler.cookiejar])
-            response=context.request.get(links[0],timeout=180000)
-            if response.status!=200 or '/superset/' not in response.url:
-                raise StructureError('BI authentication failed')
-            html=BILinks();html.feed(response.text());self.csrf=html.csrf
+            # Follow the same accounting redirects in Chrome as the user's dashboard.
+            def abort_initial_charts(route):route.abort()
+            context.route('**/api/v1/chart/data*',abort_initial_charts)
+            page=context.new_page()
+            try:
+                response=page.goto(links[0],wait_until='domcontentloaded',timeout=180000)
+                if response is None or response.status!=200 or '/superset/' not in page.url:
+                    raise StructureError('BI authentication failed')
+                html=BILinks();html.feed(page.content());self.csrf=html.csrf
+            finally:
+                page.close();context.unroute('**/api/v1/chart/data*',abort_initial_charts)
             self.context=context
             print('BI: session authenticated',flush=True)
         except Exception as exc:
