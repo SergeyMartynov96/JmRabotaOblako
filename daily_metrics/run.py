@@ -11,6 +11,8 @@ from .config import BRANCHES
 from .core import (DASH,StructureError,a1,date_matches,lower_targets,money,number,
                    procurement,revenue_report,target_candidates,tops,value,writeoff_report)
 from .io import RevenueSheet,SUReports,csv_sheet,tops_sheet
+from .extended_io import ExtraSources
+from .extended_run import fill_extra
 
 TZ=ZoneInfo('Asia/Yekaterinburg')
 
@@ -31,7 +33,7 @@ def percentage_literal(displayed,target_display):
     return str(n).replace('.',',')+'%' if '%' in target_display else str(n).replace('.',',')
 
 
-def fill_branch(browser,client,branch,day,apply,summary):
+def fill_branch(browser,client,branch,day,apply,summary,extra_sources=None):
     print(branch.name+': checking revenue date and blank cells',flush=True)
     sheet=RevenueSheet(browser,branch,day)
     try:
@@ -99,6 +101,8 @@ def fill_branch(browser,client,branch,day,apply,summary):
                     summary['written']+=1;summary['missing']+=literal==DASH
             else:summary['planned']+=1
         else:summary['preserved']+=1
+        if extra_sources is not None:
+            errors.extend(fill_extra(sheet,extra_sources,branch,day,header,row,rows,apply,summary,check_date))
         return errors
     finally:sheet.page.close()
 
@@ -119,16 +123,17 @@ def main():
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         browser=pw.chromium.launch(headless=True,executable_path=shutil.which('google-chrome'))
+        extra_sources=ExtraSources(browser,client)
         try:
             for branch in BRANCHES:
                 if args.branch not in ('all',branch.name):continue
                 try:
-                    errors=fill_branch(browser,client,branch,day,args.operation=='apply',summary)
+                    errors=fill_branch(browser,client,branch,day,args.operation=='apply',summary,extra_sources)
                     summary['errors'].extend(branch.name+': '+e for e in errors)
                 except Exception as exc:
                     message=str(exc) if isinstance(exc,StructureError) else 'technical failure ('+type(exc).__name__+')'
                     summary['errors'].append(branch.name+': '+message)
-        finally:browser.close()
+        finally:extra_sources.close();browser.close()
     # Counts only; no source documents, money, credentials, or remote error bodies in logs.
     print(json.dumps(summary,ensure_ascii=False))
     if os.getenv('GITHUB_STEP_SUMMARY'):

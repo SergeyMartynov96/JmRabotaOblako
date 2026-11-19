@@ -31,7 +31,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Validate metrics rules
-        run: python3 -m unittest discover -s tests -p 'test_daily_metrics.py' -v
+        run: python3 -m unittest discover -s tests -p 'test*metrics.py' -v
       - name: Resolve original run date
         env:
           GH_TOKEN: ${{ github.token }}
