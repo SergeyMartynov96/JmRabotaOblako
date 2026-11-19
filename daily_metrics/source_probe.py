@@ -55,11 +55,18 @@ def main():
                     snippet=html[max(0,match.start()-90):match.end()+190]
                     hints.append(snippet)
             
-            supplier_matches={}
-            for alias in ALIASES:
-                with client.opener.open(SU+'/turnover/waybill/contractorAutocomplete?'+urllib.parse.urlencode({'term':alias}),timeout=90) as response:
-                    supplier_matches[alias]=json.loads(response.read().decode())
-            print(json.dumps({'supplier_matches':supplier_matches},ensure_ascii=False),flush=True)
+            from .config import BRANCHES
+            from .run import reporting_day
+            day=reporting_day()
+            params={'Waybill[insert_date_from]':day.strftime('%d.%m.%Y'),'Waybill[insert_date_to]':day.strftime('%d.%m.%Y'),
+                    'Waybill[department_id][]':'153','Waybill[contractor_id][]':[3242,3544,4086,5329,5361,5515,5918,8334,9388,10736,11164,11519,11873,12007,12935,13166,13442,13456,13510,13743,14172,14219,15724],
+                    'Waybill[itemsOnPage]':'1000','yt19':'Сформировать'}
+            with client.opener.open(SU+INVOICE+'?'+urllib.parse.urlencode(params,doseq=True),timeout=120) as response:report=response.read().decode()
+            from .core import Report,text
+            invoice=Report();invoice.feed(report)
+            print(json.dumps({'invoice_headers':re.findall(r'<th[^>]*>(.*?)</th>',report,re.S),
+                              'invoice_date_labels':[r for _,table in invoice.tables for r in table if len(r)==2 and any('дата' in text(v) for v in r)],
+                              'invoice_row_lengths':sorted({len(r) for _,table in invoice.tables for r in table if len(r)>12})},ensure_ascii=False),flush=True)
             print(json.dumps({'invoice_forms':p.forms,'invoice_fields':p.fields,'supplier_options':matches,'autocomplete_hints':hints},ensure_ascii=False),flush=True)
         else:
             for row in p.rows:
@@ -75,9 +82,15 @@ def main():
         for handler in client.opener.handlers:
             if hasattr(handler,'cookiejar'):
                 context.add_cookies([{'name':c.name,'value':c.value,'domain':c.domain,'path':c.path,'secure':c.secure} for c in handler.cookiejar])
-        page=context.new_page()
-        page.goto(next(iter(targets.values())),wait_until='domcontentloaded',timeout=120000)
-        print(json.dumps({'stage':'bi_authenticated','location':safe_path(page.url)}),flush=True)
+        for attempt in range(3):
+            try:
+                response=context.request.get(next(iter(targets.values())),timeout=45000)
+                if response.status!=200:raise RuntimeError('BI accounting login failed')
+                break
+            except Exception:
+                if attempt==2:raise
+                print(json.dumps({'stage':'bi_login_retry'}),flush=True)
+        print(json.dumps({'stage':'bi_authenticated'}),flush=True)
         for title,url in targets.items():
             try:
                 nxt=urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get('next',[''])[0]
