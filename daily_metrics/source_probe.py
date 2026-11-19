@@ -45,7 +45,7 @@ def main():
                                 info['matches_existing']=actual==expected
                         print(json.dumps(info,ensure_ascii=False),flush=True)
                     except Exception as exc:
-                        print(json.dumps({'branch':branch.name,'source':kind,'error':type(exc).__name__}),flush=True)
+                        print(json.dumps({'branch':branch.name,'source':kind,'error':str(exc) if type(exc).__name__=='StructureError' else type(exc).__name__}),flush=True)
                         if kind!='invoices':
                             try:
                                 raw=bi_rows(sources.bi.read(kind,branch,day))

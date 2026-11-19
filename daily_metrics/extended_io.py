@@ -64,9 +64,9 @@ class BIReports:
             if not token:raise StructureError('BI read token unavailable')
             response=self.context.request.post(BI+path,data=data,
                 headers={'X-CSRFToken':token,'Referer':BI+'/'},timeout=180000)
-        if response.status!=200:raise StructureError('BI read unsuccessful')
+        if response.status!=200:raise StructureError('BI read unsuccessful HTTP '+str(response.status))
         payload=response.json()
-        if payload.get('errors'):raise StructureError('BI query rejected')
+        if payload.get('errors'):raise StructureError('BI query rejected: '+','.join(str(e.get('error_type','unknown')) for e in payload['errors']))
         return payload
 
     def template(self,kind):
