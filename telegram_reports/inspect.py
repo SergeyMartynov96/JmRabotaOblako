@@ -33,10 +33,19 @@ def main():
                 for chart in charts:
                     params=chart.get('form_data') or chart.get('params') or {}
                     if isinstance(params,str):params=json.loads(params)
-                    context=chart.get('query_context')
-                    if isinstance(context,str):context=json.loads(context)
-                    print(json.dumps({'dashboard':dashboard,'id':chart.get('id'),'title':chart.get('slice_name'),
-                        'viz_type':params.get('viz_type'),'query_saved':bool(context)},ensure_ascii=False),flush=True)
+                    title=chart.get('slice_name','')
+                    selected=(title in ('Списания. Категории. ТОП-блюда, руб','Списания. Категории. ТОП-блюда, шт','Списания. Причины. Период, %','Списания % от выбранного блюда, категории','Списания % от выбранного блюда, УИ2')
+                        or ('Таблица_Топы' in title) or ('3.1.' in title and 'динамика' not in title)
+                        or title in ('OSA % по in_stock','OSA % по in_stock Готовая еда + Япония','OSA % по in_stock Готовая еда','OSA % по in_stock Япония'))
+                    if not selected:continue
+                    ident=chart.get('id') or chart.get('slice_id') or params.get('slice_id')
+                    print(json.dumps({'dashboard':dashboard,'id':ident,'title':title,'chart_keys':list(chart),
+                        'form':params},ensure_ascii=False),flush=True)
+                    if ident:
+                        detail=bi.api(f'/api/v1/chart/{ident}').get('result',{})
+                        context=detail.get('query_context')
+                        if isinstance(context,str):context=json.loads(context)
+                        print(json.dumps({'id':ident,'title':title,'query_context':context},ensure_ascii=False),flush=True)
         finally:bi.close();browser.close()
 
 if __name__=='__main__':
