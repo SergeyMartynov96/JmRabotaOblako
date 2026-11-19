@@ -1,5 +1,5 @@
 """Blank-only transfer of yesterday's BI and invoice metrics."""
-from .core import DASH,a1,money
+from .core import DASH,a1,money,same_cell_value
 from .extended_core import extra_targets,percent_literal
 
 
@@ -14,7 +14,7 @@ def fill_extra(sheet,sources,branch,day,header,row,rows,apply,summary,check_date
     for metric,cells in targets.items():
         pending=[(r,c) for r,c in cells if not sheet.formula(a1(r,c))]
         summary['preserved']+=len(cells)-len(pending)
-        if apply and not pending:continue
+        if apply and not pending and metric!='reasons':continue
         print(branch.name+': reading '+metric,flush=True)
         try:
             result=sources.read(metric,branch,day)
@@ -29,6 +29,21 @@ def fill_extra(sheet,sources,branch,day,header,row,rows,apply,summary,check_date
         except Exception as exc:
             errors.append(metric+' source failed ('+type(exc).__name__+')')
             continue
+        if metric=='reasons' and getattr(result,'has_defect',False) and result.damage_base is not None:
+            # Owner explicitly requested damage + defects. Correct only a verified
+            # standalone damage scalar, preserving formulas and unrelated manual edits.
+            old=percent_literal(result.damage_base,branch.name,1)
+            merged=percent_literal(result['damage'],branch.name,1)
+            for r,c in layout['reasons'].get('damage',[]):
+                if (r,c) in pending or same_cell_value(old,merged):continue
+                cell=a1(r,c);current=sheet.formula(cell)
+                if not same_cell_value(current,old):continue
+                check_date(day)
+                if apply:
+                    if sheet.replace_if_unchanged(cell,old,merged):
+                        summary['preserved']-=1;summary['written']+=1
+                        summary['reconciled_damage']=summary.get('reconciled_damage',0)+1
+                else:summary['preserved']-=1;summary['planned']+=1
         for r,c in pending:
             if (r,c) not in values:continue
             check_date(day)

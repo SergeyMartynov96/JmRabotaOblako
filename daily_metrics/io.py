@@ -159,3 +159,19 @@ class RevenueSheet:
             actual=self.formula(cell)
             if same_cell_value(actual,result):return True
         raise StructureError('Revenue write not verified')
+
+
+    def replace_if_unchanged(self,cell,expected,result):
+        """Only the approved defect+damage correction may replace a verified old scalar."""
+        if cell not in self.allowed:raise StructureError('Write outside approved revenue cells')
+        for anchor,original in self.anchors.items():
+            if self.formula(anchor)!=original:raise StructureError('Revenue date/week moved during run')
+        actual=self.formula(cell)
+        if actual.startswith('=') or not same_cell_value(actual,expected):return False
+        self.select(cell)
+        self.page.evaluate('(text) => navigator.clipboard.writeText(text)',result)
+        self.page.keyboard.press('Control+V');self.page.wait_for_timeout(250);self.page.keyboard.press('Enter')
+        for _ in range(8):
+            self.page.wait_for_timeout(500)
+            if same_cell_value(self.formula(cell),result):return True
+        raise StructureError('Combined damage write not verified')

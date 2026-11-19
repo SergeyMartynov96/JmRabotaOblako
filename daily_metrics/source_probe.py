@@ -53,7 +53,9 @@ def main():
                                 import re
                                 decimals=re.search(r'[.,](\d+)\s*%?$',stored)
                                 places=len(decimals[1]) if decimals else 0
-                                actual=number(result).quantize(Decimal(10)**-places,rounding=ROUND_HALF_UP)
+                                copy_places=0 if kind=='invoices' else 2 if kind=='uv' else 1
+                                actual=number(result).quantize(Decimal(10)**-copy_places,rounding=ROUND_HALF_UP)
+                                actual=actual.quantize(Decimal(10)**-places,rounding=ROUND_HALF_UP)
                                 info['matches_existing']=actual==expected
                         if result is not None:verified+=1
                         else:failures.append(branch.name+': '+kind+' empty')

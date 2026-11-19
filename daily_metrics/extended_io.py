@@ -1,9 +1,11 @@
 """Read-only adapters for the owner's three additional BI sources."""
 import json
 import time
+import os
 import urllib.parse
 from html.parser import HTMLParser
 from .core import StructureError
+from .io import SU
 from .extended_core import daily_query
 
 BI='https://bi.lifemart.ru'
@@ -46,15 +48,13 @@ class BIReports:
     def _authenticate(self):
         if self.context is not None:return
         if self._auth_error is not None:raise self._auth_error
-        print('BI: authenticating SU session',flush=True)
-        self.client.ensure_authenticated()
         # This accounting route and dashboard were verified from the SU menu.
         # Avoid reloading the slow menu for every cloud session.
         links=[BI+'/login/accounting?'+urllib.parse.urlencode({'next':'/superset/dashboard/37/'})]
         print('BI: opening accounting session',flush=True)
         context=self.browser.new_context()
         try:
-            for handler in self.client.opener.handlers:
+            for handler in self.client.opener.handlers if self.client._authenticated else []:
                 if hasattr(handler,'cookiejar'):
                     context.add_cookies([{'name':c.name,'value':c.value,'domain':c.domain,'path':c.path,'secure':c.secure}
                                          for c in handler.cookiejar])
@@ -65,6 +65,7 @@ class BIReports:
             context.route('**/*',session_documents)
             page=context.new_page()
             try:
+                if not self.client._authenticated:self._browser_login(page)
                 started=time.monotonic()
                 response=page.goto(links[0],wait_until='commit',timeout=180000)
                 location=urllib.parse.urlsplit(page.url)
@@ -91,6 +92,27 @@ class BIReports:
         except Exception as exc:
             self._auth_error=exc
             context.close();raise
+
+    def _browser_login(self,page):
+        username=os.getenv('LIFEMART_LOGIN');password=os.getenv('LIFEMART_PASSWORD')
+        if not (username and password):raise StructureError('SU credentials must be configured in GitHub Actions Secrets')
+        print('BI: signing into SU in Chrome',flush=True)
+        deadline=time.monotonic()+180
+        def remaining():return max(1,int((deadline-time.monotonic())*1000))
+        page.goto(SU+'/site/login',wait_until='commit',timeout=remaining())
+        location=urllib.parse.urlsplit(page.url)
+        if location.hostname!='su.lifemart.ru' or location.path!='/site/login':
+            raise StructureError('Unexpected SU login location')
+        page.locator('input[name="LoginForm[username]"]').fill(username,timeout=remaining())
+        password_field=page.locator('input[name="LoginForm[password]"]')
+        password_field.fill(password,timeout=remaining())
+        form=page.locator('form').filter(has=password_field)
+        with page.expect_navigation(wait_until='commit',timeout=remaining()):
+            form.locator('button[type="submit"], input[type="submit"]').first.click(timeout=remaining())
+        location=urllib.parse.urlsplit(page.url)
+        if location.hostname!='su.lifemart.ru' or location.path=='/site/login':
+            raise StructureError('SU browser login failed')
+        print('BI: SU browser session authenticated',flush=True)
 
     def api(self,path,data=None):
         self.authenticate()

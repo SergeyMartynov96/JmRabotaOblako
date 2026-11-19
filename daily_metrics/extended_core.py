@@ -8,7 +8,7 @@ REASON_ALIASES={
     'sg_purchase':('сг закуп','срок годности закуп'),
     'workshop':('цех','цеховое питание'),
     'consumables':('расходка','расходные материалы'),
-    'damage':('порча',),
+    'damage':('порча','брак'),
     'marketing':('маркетинг',),
     'tasting':('дегустация',),
     'sg_rotation':('сг ротация','срок годности ротация'),
@@ -126,17 +126,28 @@ def bi_percent(payload,metric,title,day,kind):
     return result
 
 
+class ReasonValues(dict):
+    damage_base=None
+    has_defect=False
+
+
 def bi_reasons(payload,metric):
-    values={}
+    values=ReasonValues();seen=set()
     for row in bi_rows(payload):
         if 'reason' not in row or metric not in row:raise StructureError('BI reason columns missing')
-        name=reason_key(row['reason'])
-        if name is None:
-            if key(row['reason'])=='брак':continue  # No corresponding column; classification pending owner input.
-            raise StructureError('Unmapped BI reason')
-        if name in values:raise StructureError('BI reason duplicated')
+        raw=key(row['reason']);name=reason_key(row['reason'])
+        if name is None:raise StructureError('Unmapped BI reason')
+        if raw in seen:raise StructureError('BI reason duplicated')
+        seen.add(raw)
         result=percentage_points(row[metric])
-        if result is not None:values[name]=result
+        if result is None:continue
+        if name=='damage':
+            values[name]=values.get(name,Decimal(0))+result
+            if raw=='порча':values.damage_base=result
+            if raw=='брак':values.has_defect=True
+        else:
+            if name in values:raise StructureError('BI reason duplicated')
+            values[name]=result
     return values
 
 

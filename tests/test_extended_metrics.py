@@ -157,8 +157,51 @@ class ChartBinding(unittest.TestCase):
         self.assertEqual(form['slice_id'],3696)
         self.assertEqual(context['queries'][0]['metrics'],['OSA "На 20:00"'])
         reader.api.assert_called_once_with('/api/v1/chart/3696')
-    def test_out_of_layout_reason_is_not_silently_added_to_damage(self):
+    def test_defects_are_added_to_damage_as_requested(self):
         from daily_metrics.extended_core import bi_reasons
         from decimal import Decimal
         payload={'result':[{'data':[{'reason':'Порча','Списания %':.001},{'reason':'Брак','Списания %':.002}]}]}
-        self.assertEqual(bi_reasons(payload,'Списания %'),{'damage':Decimal('.100')})
+        self.assertEqual(bi_reasons(payload,'Списания %'),{'damage':Decimal('.300')})
+
+class CombinedDamage(unittest.TestCase):
+    def test_defect_metadata_does_not_leak_to_other_store(self):
+        from daily_metrics.extended_core import bi_reasons
+        combined=bi_reasons({'result':[{'data':[{'reason':'Порча','p':.001},{'reason':'Брак','p':.002}]}]},'p')
+        other=bi_reasons({'result':[{'data':[{'reason':'Порча','p':.001}]}]},'p')
+        self.assertTrue(combined.has_defect)
+        self.assertFalse(other.has_defect)
+        self.assertEqual(combined.damage_base,other['damage'])
+    def test_replaces_only_confirmed_standalone_damage(self):
+        from unittest.mock import Mock,patch
+        from daily_metrics.extended_core import ReasonValues
+        from daily_metrics.extended_run import fill_extra
+        result=ReasonValues(damage=.3);result.damage_base=.1;result.has_defect=True
+        layout={'uv':(3,5),'osa':(3,9),'invoices':(3,15),'reasons':{'damage':[(17,14)]},'date_anchors':[]}
+        sheet=Mock();sheet.allowed=set();sheet.anchors={}
+        sheet.formula.side_effect=lambda cell:'0,1' if cell=='O18' else 'filled'
+        sheet.replace_if_unchanged.return_value=True
+        sources=Mock();sources.read.return_value=result
+        summary={'written':0,'preserved':0,'missing':0,'planned':0}
+        branch=Mock();branch.name='АВ12'
+        with patch('daily_metrics.extended_run.extra_targets',return_value=layout):
+            errors=fill_extra(sheet,sources,branch,dt.date(2026,11,18),0,3,[],True,summary,lambda day:None)
+        self.assertEqual(errors,[])
+        sheet.replace_if_unchanged.assert_called_once_with('O18','0,1','0,3')
+        sheet.put_blank.assert_not_called()
+        self.assertEqual(summary['reconciled_damage'],1)
+        self.assertEqual(summary['written'],1)
+    def test_changed_manual_value_and_formula_are_never_replaced(self):
+        from unittest.mock import Mock
+        from daily_metrics.io import RevenueSheet
+        for current in ('0,7','=0.1'):
+            sheet=RevenueSheet.__new__(RevenueSheet);sheet.allowed={'O18'};sheet.anchors={'A6':'18.11.2026'}
+            sheet.page=Mock();sheet.formula=Mock(side_effect=['18.11.2026',current])
+            self.assertFalse(sheet.replace_if_unchanged('O18','0,1','0,3'))
+            sheet.page.evaluate.assert_not_called()
+    def test_browser_login_requires_secrets_before_network(self):
+        from unittest.mock import Mock,patch
+        from daily_metrics.extended_io import BIReports
+        reader=BIReports(Mock(),Mock());page=Mock()
+        with patch.dict('os.environ',{},clear=True):
+            with self.assertRaises(StructureError):reader._browser_login(page)
+        page.goto.assert_not_called()
