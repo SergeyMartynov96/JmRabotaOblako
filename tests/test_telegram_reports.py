@@ -114,3 +114,18 @@ class ScopeValidationTests(unittest.TestCase):
         for change in ({'applied_filters':[]},{'rejected_filters':[{'column':'title'}]},
                        {'from_dttm':1794787200000.0},{'status':'failed'}):
             with self.assertRaises(StructureError):validate_scope({**valid,**change},start,end)
+
+class OSAPivotTests(unittest.TestCase):
+    def test_hidden_snapshots_removed_from_pivot_without_dropping_date_sort(self):
+        import datetime as dt
+        from types import SimpleNamespace
+        from telegram_reports.core import constrained_query,OSA_METRICS
+        all_metrics=[*OSA_METRICS,'OSA "На 17:00"','OSA "На вечер"','OSA "На утро"']
+        saved={'queries':[{'metrics':all_metrics,'post_processing':[{'operation':'pivot','options':{
+            'index':['__timestamp'],'columns':[],'aggregates':{m:{'operator':'mean'} for m in all_metrics}}},{'operation':'flatten'}]}]}
+        result=constrained_query({},saved,SimpleNamespace(title='intended'),dt.date(2026,11,16),dt.date(2026,11,19),56,osa=True)
+        post=result['queries'][0]['post_processing']
+        self.assertEqual(list(post[0]['options']['aggregates']),list(OSA_METRICS))
+        self.assertEqual(post[0]['options']['index'],['__timestamp'])
+        self.assertEqual(post[1],{'operation':'flatten'})
+        self.assertEqual(len(saved['queries'][0]['metrics']),5)
