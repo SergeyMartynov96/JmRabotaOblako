@@ -8,6 +8,7 @@ import re
 import time
 import urllib.parse
 import urllib.request
+import urllib.error
 from .core import StructureError, MONTHS, same_cell_value
 
 SU='https://su.lifemart.ru'
@@ -56,11 +57,23 @@ class SUReports:
         self._authenticated=False
         self._login_error=None
     def request(self,path,data=None):
-        if urllib.parse.urlsplit(path).path not in ('/site/login',REVENUE,WRITEOFF):
+        if urllib.parse.urlsplit(path).path not in ('/site/login',REVENUE,WRITEOFF, '/handbook/biSupersetSettings/index', '/turnover/waybill/report', '/turnover/waybill/contractorAutocomplete'):
             raise ValueError('Only metrics read endpoints allowed')
+        if data is not None and urllib.parse.urlsplit(path).path not in ('/site/login',REVENUE):
+            raise ValueError('Only login and revenue report POST allowed')
         encoded=urllib.parse.urlencode(data,doseq=True).encode() if data is not None else None
-        with self.opener.open(SU+path,encoded,timeout=600 if path==REVENUE else 120) as response:
-            result=response.read().decode()
+        fast=urllib.parse.urlsplit(path).path in ('/site/login','/handbook/biSupersetSettings/index')
+        attempts=3 if fast else 1
+        for attempt in range(attempts):
+            try:
+                with self.opener.open(SU+path,encoded,timeout=35 if fast else (600 if path==REVENUE else 120)) as response:
+                    result=response.read().decode()
+                break
+            except urllib.error.HTTPError as exc:
+                if exc.code not in (429,500,502,503,504) or attempt+1==attempts:raise
+            except (TimeoutError,urllib.error.URLError):
+                if attempt+1==attempts:raise
+            print('Retrying a transient SU authentication/menu read failure',flush=True)
         if path!='/site/login' and 'LoginForm[password]' in result:
             raise StructureError('SU session expired')
         return result
