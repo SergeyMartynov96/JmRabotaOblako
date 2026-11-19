@@ -50,10 +50,16 @@ def main():
         if path==INVOICE:
             matches=[{'field':field,'id':ident,'name':name} for field,ident,name in p.options if any(alias.casefold() in name.casefold() for alias in ALIASES)]
             hints=[]
-            for marker in ('contractor_id','autocomplete'):
+            for marker in ('w_selectedyw1','new Select','department_id','department_to','contractor_id'):
                 for match in list(re.finditer(re.escape(marker),html))[-6:]:
                     snippet=html[max(0,match.start()-90):match.end()+190]
                     hints.append(snippet)
+            
+            supplier_matches={}
+            for alias in ALIASES:
+                with client.opener.open(SU+'/turnover/waybill/contractorAutocomplete?'+urllib.parse.urlencode({'term':alias}),timeout=90) as response:
+                    supplier_matches[alias]=json.loads(response.read().decode())
+            print(json.dumps({'supplier_matches':supplier_matches},ensure_ascii=False),flush=True)
             print(json.dumps({'invoice_forms':p.forms,'invoice_fields':p.fields,'supplier_options':matches,'autocomplete_hints':hints},ensure_ascii=False),flush=True)
         else:
             for row in p.rows:
@@ -93,7 +99,12 @@ def main():
                     metrics=fd.get('metrics',[])
                     fields['metrics']=[m if isinstance(m,str) else {'label':m.get('label'),'expressionType':m.get('expressionType')} for m in metrics]
                     fields['filter_columns']=[f.get('subject') for f in fd.get('adhoc_filters',[])]
-                    wanted.append({'id':chart.get('id'),'title':name,'chart_keys':list(chart),'form_keys':list(fd),'fields':fields})
+                    detail=context.request.get(f"https://bi.lifemart.ru/api/v1/chart/{fd['slice_id']}",timeout=90000).json().get('result',{})
+                    qc=detail.get('query_context')
+                    if isinstance(qc,str):qc=json.loads(qc)
+                    fields.update({k:fd.get(k) for k in ('groupbyRows','groupbyColumns','valueFormat','extra_form_data','adhoc_filters')})
+                    fields['query_context']=qc
+                    wanted.append({'id':fd.get('slice_id'),'title':name,'chart_keys':list(chart),'form_keys':list(fd),'fields':fields})
                 print(json.dumps({'dashboard':title,'id':ident,'api_status':response.status,'filters':filters,'charts':wanted},ensure_ascii=False),flush=True)
             except Exception as exc:print(json.dumps({'dashboard':title,'error':type(exc).__name__}),flush=True)
         browser.close()
