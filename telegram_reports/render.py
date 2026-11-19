@@ -45,7 +45,8 @@ def capture_chart(bi,form,payload,destination,width=900,height=430):
         else:raise StructureError('BI rendered image did not settle within three minutes')
         # Disable transitions; a chart can otherwise be captured mid-animation.
         page.add_style_tag(content='*,*::before,*::after{animation:none!important;transition:none!important}')
-        page.screenshot(path=str(destination))
+        if str(form.get('slice_id'))=='4412':page.locator('table').first.screenshot(path=str(destination))
+        else:page.screenshot(path=str(destination))
         return {'validated_result_rendered':True}
     except Exception:
         try:page.screenshot(path=str(Path(destination).with_suffix(".failed.png")),timeout=5000)
@@ -54,10 +55,9 @@ def capture_chart(bi,form,payload,destination,width=900,height=430):
     finally:page.close()
 
 
-def compose(browser,panels,destination,columns=1,heading=None):
+def compose(browser,panels,destination,columns=1,heading=None,width=1800):
     """Lay out unmodified source screenshots; no financial values are reconstructed."""
     context=browser.new_context();page=context.new_page()
-    width=1800
     page.set_viewport_size({'width':width,'height':1400})
     cards=[]
     for title,path in panels:

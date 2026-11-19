@@ -62,3 +62,42 @@ class ReportPeriodTests(unittest.TestCase):
         self.assertEqual(query['queries'][0]['time_range'],'2026-11-16 : 2026-11-19')
         self.assertEqual(query['queries'][0]['metrics'],list(OSA_METRICS)+['OSA \"На 17:00\"'])
         self.assertEqual(query['queries'][0]['filters'],[{'col':'active','op':'==','val':True},{'col':'title','op':'IN','val':['intended']}])
+
+class DeliveryTests(unittest.TestCase):
+    def test_yesterday_osa_uses_exact_date_not_last_row(self):
+        import datetime as dt
+        from telegram_reports.run import osa_yesterday
+        from daily_metrics.core import StructureError
+        def row(day,one,two):
+            return {'__timestamp':day,'OSA "На 11:00"':one,'OSA "На 20:00"':two}
+        payload={'result':[{'data':[row('2026-11-18',.8,.5),row('2026-11-17',.9,.6)]}]}
+        self.assertEqual(osa_yesterday(payload,dt.date(2026,11,18)),[80,50])
+        with self.assertRaises(StructureError):osa_yesterday(payload,dt.date(2026,11,19))
+
+    def test_album_failure_never_retries_or_leaks_transport_details(self):
+        import tempfile
+        from pathlib import Path
+        from telegram_reports.transport import send_album
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'one.png';path.write_bytes(b'\x89PNGdummy')
+            with patch('urllib.request.urlopen',side_effect=OSError('unit-key and private chat')) as call:
+                with self.assertRaises(BotError) as caught:send_album(BotClient('unit-key'),123,[path,path],'caption')
+                self.assertEqual(call.call_count,1)
+                self.assertNotIn('unit-key',str(caught.exception))
+                self.assertIn('do not automatically retry',str(caught.exception))
+
+class TimerTests(unittest.TestCase):
+    def event(self,**changes):
+        run={'path':'.github/workflows/daily-metrics.yml','head_branch':'main','head_repository':{'full_name':'owner/repo'},
+             'event':'workflow_dispatch','display_title':'LifeMart metrics apply (all)','created_at':'2026-11-20T03:00:00Z'}
+        run.update(changes)
+        return {'action':'requested','workflow_run':run}
+    def test_only_morning_external_signal_arms_nine(self):
+        import datetime as dt
+        from telegram_reports.timer import due_time,TZ
+        now=dt.datetime(2026,11,20,8,1,tzinfo=TZ)
+        self.assertEqual(due_time(self.event(),now,'owner/repo'),dt.datetime(2026,11,20,9,tzinfo=TZ))
+        for change in ({'display_title':'LifeMart metrics preview (all)'},{'head_branch':'feature'},{'created_at':'2026-11-20T04:00:00Z'},
+                       {'created_at':'2026-11-19T03:00:00Z'},{'head_repository':{'full_name':'foreign/repo'}}):
+            self.assertIsNone(due_time(self.event(**change),now,'owner/repo'))
+        with self.assertRaises(ValueError):due_time(self.event(),now.replace(hour=10),'owner/repo')

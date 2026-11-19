@@ -5,7 +5,7 @@ on:
     inputs:
       operation:
         type: choice
-        options: [preview, deliver]
+        options: [preview, deliver, verify]
         default: preview
         required: true
       branch:

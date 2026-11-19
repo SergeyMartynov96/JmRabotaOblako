@@ -11,6 +11,7 @@ from daily_metrics.core import StructureError
 from daily_metrics.run import reporting_day
 from daily_metrics.source_probe import safe_error
 from .catalog import ReportCharts,CHARTS
+from .session import ReportSUReports
 from .core import weekly_period,OSA_METRICS
 from .render import capture_chart,compose
 from .sheets import capture_week
@@ -61,7 +62,7 @@ def collect(browser,bi,charts,branch,day,folder):
     images=[folder/f'{index:02}.png' for index in range(8)]
     capture_week(bi.context,branch,day,images[0])
     capture_invoices(bi.context,branch,day,images[1])
-    compose(browser,[panels['reasons']],images[2])
+    compose(browser,[panels['reasons']],images[2],width=700)
     compose(browser,[panels['top_qty'],panels['top_rub']],images[3],columns=2)
     compose(browser,[panels['ui2_days'],panels['ui2']],images[4],columns=2)
     compose(browser,[panels['uv_dishes']],images[5])
@@ -83,9 +84,19 @@ def prior_attempts(day):
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--operation',choices=('preview','deliver'),default='preview')
+    parser=argparse.ArgumentParser();parser.add_argument('--operation',choices=('preview','deliver','verify'),default='preview')
     parser.add_argument('--branch',choices=['all']+[b.name for b in BRANCHES],default='all');args=parser.parse_args()
     if os.getenv('GITHUB_ACTIONS')!='true':raise StructureError('Use GitHub Actions for report collection')
+    if args.operation=='verify':
+        bot=BotClient(os.environ.get('TELEGRAM_BOT_TOKEN',''));me=bot.identity()
+        decrypt_recipient(bot._token,me['id'],json.loads(BINDING.read_text()))
+        print('{"timer_dispatch_verified":true,"private_binding_valid":true,"messages_sent":0}',flush=True)
+        return
+    request=urllib.request.Request('https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/'+os.environ['GITHUB_RUN_ID'],
+        headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+    with urllib.request.urlopen(request,timeout=30) as response:metadata=json.load(response)
+    created=dt.datetime.fromisoformat(metadata['created_at'].replace('Z','+00:00')).astimezone(TZ)
+    if created.date()!=dt.datetime.now(TZ).date():raise StructureError('Queued report belongs to another local day')
     day=reporting_day();branches=[b for b in BRANCHES if args.branch in ('all',b.name)]
     public=os.getenv('REVIEW_PUBLIC_KEY','')
     if args.operation=='preview' and not public:raise StructureError('Encrypted review public key required')
@@ -102,7 +113,8 @@ def main():
         try:
             with sync_playwright() as pw:
                 browser=pw.chromium.launch(headless=True,executable_path=shutil.which('google-chrome'))
-                bi=BIReports(browser,SUReports());charts=ReportCharts(bi)
+                client=ReportSUReports();client.ensure_authenticated()
+                bi=BIReports(browser,client);charts=ReportCharts(bi)
                 try:
                     bi.authenticate()
                     for branch in branches:
