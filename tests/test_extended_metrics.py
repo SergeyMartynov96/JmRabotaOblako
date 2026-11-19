@@ -221,3 +221,12 @@ class StableAnchors(unittest.TestCase):
         sheet.check_anchors()
         sheet.anchor_value=Mock(return_value='23.11-29.11')
         with self.assertRaisesRegex(StructureError,'G3132'):sheet.check_anchors()
+
+class LoginErrors(unittest.TestCase):
+    def test_http_error_is_detected_without_waiting_for_absent_form(self):
+        from unittest.mock import Mock,patch
+        from daily_metrics.extended_io import BIReports
+        reader=BIReports(Mock(),Mock());page=Mock();page.goto.return_value=Mock(status=503)
+        with patch.dict('os.environ',{'LIFEMART_LOGIN':'test-user','LIFEMART_PASSWORD':'test-pass'}):
+            with self.assertRaisesRegex(StructureError,'HTTP 503'):reader._browser_login(page)
+        page.locator.assert_not_called()

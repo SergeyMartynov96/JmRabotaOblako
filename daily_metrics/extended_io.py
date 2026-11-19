@@ -62,10 +62,10 @@ class BIReports:
             def session_documents(route):
                 if route.request.resource_type=='document':route.continue_()
                 else:route.abort()
-            context.route('**/*',session_documents)
             page=context.new_page()
             try:
                 if not self.client._authenticated:self._browser_login(page)
+                context.route('**/*',session_documents)
                 started=time.monotonic()
                 response=page.goto(links[0],wait_until='commit',timeout=180000)
                 location=urllib.parse.urlsplit(page.url)
@@ -99,16 +99,23 @@ class BIReports:
         print('BI: signing into SU in Chrome',flush=True)
         deadline=time.monotonic()+180
         def remaining():return max(1,int((deadline-time.monotonic())*1000))
-        page.goto(SU+'/site/login',wait_until='commit',timeout=remaining())
+        response=page.goto(SU+'/site/login',wait_until='commit',timeout=remaining())
+        if response is None or response.status!=200:
+            raise StructureError('SU login page HTTP '+str(response.status if response else 0))
+        print('BI: SU login document received',flush=True)
         location=urllib.parse.urlsplit(page.url)
         if location.hostname!='su.lifemart.ru' or location.path!='/site/login':
             raise StructureError('Unexpected SU login location')
         page.locator('input[name="LoginForm[username]"]').fill(username,timeout=remaining())
         password_field=page.locator('input[name="LoginForm[password]"]')
         password_field.fill(password,timeout=remaining())
+        print('BI: submitting SU sign-in form',flush=True)
         form=page.locator('form').filter(has=password_field)
-        with page.expect_navigation(wait_until='commit',timeout=remaining()):
+        with page.expect_navigation(wait_until='commit',timeout=remaining()) as navigation:
             form.locator('button[type="submit"], input[type="submit"]').first.click(timeout=remaining())
+        response=navigation.value
+        if response is None or response.status!=200:
+            raise StructureError('SU sign-in response HTTP '+str(response.status if response else 0))
         location=urllib.parse.urlsplit(page.url)
         if location.hostname!='su.lifemart.ru' or location.path=='/site/login':
             raise StructureError('SU browser login failed')
