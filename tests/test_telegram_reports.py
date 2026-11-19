@@ -60,5 +60,5 @@ class ReportPeriodTests(unittest.TestCase):
         query=constrained_query({},saved,SimpleNamespace(title='intended'),dt.date(2026,11,16),dt.date(2026,11,19),56,osa=True)
         self.assertEqual(saved,original)
         self.assertEqual(query['queries'][0]['time_range'],'2026-11-16 : 2026-11-19')
-        self.assertEqual(query['queries'][0]['metrics'],list(OSA_METRICS))
+        self.assertEqual(query['queries'][0]['metrics'],list(OSA_METRICS)+['OSA \"На 17:00\"'])
         self.assertEqual(query['queries'][0]['filters'],[{'col':'active','op':'==','val':True},{'col':'title','op':'IN','val':['intended']}])

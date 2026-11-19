@@ -30,6 +30,19 @@ def capture_chart(bi,form,payload,destination,width=900,height=430):
           return !!root.querySelector('svg path,svg rect,canvas,table td') && !root.querySelector('[data-test="loading-indicator"]');
         }""",timeout=remaining())
         page.evaluate("() => document.fonts.ready")
+        if str(form.get('slice_id')) in ('3695','3696','3697','3698'):
+            for label in ('OSA "На 17:00"','OSA "На вечер"','OSA "На утро"'):
+                page.get_by_text(label,exact=True).first.click(timeout=remaining())
+        # D3/ECharts animate SVG attributes in JavaScript; CSS alone does not stop
+        # those transitions. Require the actual rendered image to settle.
+        previous=None;stable=0
+        while time.monotonic()<deadline:
+            current=page.screenshot(timeout=remaining())
+            stable=stable+1 if current==previous else 0
+            if stable>=2:break
+            previous=current
+            page.wait_for_timeout(500)
+        else:raise StructureError('BI rendered image did not settle within three minutes')
         # Disable transitions; a chart can otherwise be captured mid-animation.
         page.add_style_tag(content='*,*::before,*::after{animation:none!important;transition:none!important}')
         page.screenshot(path=str(destination))
