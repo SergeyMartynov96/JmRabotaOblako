@@ -6,10 +6,27 @@ from daily_metrics.extended_io import BIReports
 from daily_metrics.source_probe import safe_error
 
 
+class DiagnosedBI(BIReports):
+    def _browser_login(self,page):
+        documents=[];failures={}
+        page.on('response',lambda response:documents.append({'status':response.status,'path':__import__('urllib.parse',fromlist=['urlsplit']).urlsplit(response.url).path}) if response.request.resource_type=='document' else None)
+        def failed(request):
+            kind=request.resource_type
+            failures[kind]=failures.get(kind,0)+1
+        page.on('requestfailed',failed)
+        try:super()._browser_login(page)
+        except Exception:
+            try:
+                state=page.evaluate("() => ({ready:document.readyState,inputs:[...document.querySelectorAll('input')].map(e=>({name:e.name,type:e.type,visible:!!e.getClientRects().length})),forms:document.forms.length})")
+                print(json.dumps({'login_diagnostic':state,'documents':documents,'failed_resources':failures}),flush=True)
+            except Exception:print('Login diagnostic DOM unavailable',flush=True)
+            raise
+
+
 def main():
     with sync_playwright() as pw:
         browser=pw.chromium.launch(headless=True,executable_path=shutil.which('google-chrome'))
-        bi=BIReports(browser,SUReports())
+        bi=DiagnosedBI(browser,SUReports())
         try:
             for dashboard in (241,37,56):
                 charts=bi.api(f'/api/v1/dashboard/{dashboard}/charts').get('result',[])
