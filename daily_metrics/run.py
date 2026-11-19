@@ -50,7 +50,7 @@ def fill_branch(browser,client,branch,day,apply,summary,extra_sources=None):
         sheet.allowed={a1(r,c) for r,c in cells}
         # Lock the full-year date, weekly heading and lower date before each write.
         anchors=[a1(row,0),a1(lower_revenue[0]-1-day.weekday(),lower_revenue[1]),a1(lower_writeoff[0],lower_writeoff[1]-1)]
-        sheet.anchors={cell:sheet.formula(cell) for cell in anchors}
+        sheet.anchors={cell:sheet.anchor_value(cell) for cell in anchors}
         metrics={}
         errors=[]
         sources={

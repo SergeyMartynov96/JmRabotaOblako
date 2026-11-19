@@ -9,7 +9,7 @@ def fill_extra(sheet,sources,branch,day,header,row,rows,apply,summary,check_date
     targets['reasons']=[cell for cells in layout['reasons'].values() for cell in cells]
     sheet.allowed.update(a1(r,c) for cells in targets.values() for r,c in cells)
     for r,c in layout['date_anchors']:
-        cell=a1(r,c);sheet.anchors[cell]=sheet.formula(cell)
+        cell=a1(r,c);sheet.anchors[cell]=sheet.anchor_value(cell)
     errors=[]
     for metric,cells in targets.items():
         pending=[(r,c) for r,c in cells if not sheet.formula(a1(r,c))]

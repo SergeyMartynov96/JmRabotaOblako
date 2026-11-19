@@ -195,7 +195,7 @@ class CombinedDamage(unittest.TestCase):
         from daily_metrics.io import RevenueSheet
         for current in ('0,7','=0.1'):
             sheet=RevenueSheet.__new__(RevenueSheet);sheet.allowed={'O18'};sheet.anchors={'A6':'18.11.2026'}
-            sheet.page=Mock();sheet.formula=Mock(side_effect=['18.11.2026',current])
+            sheet.page=Mock();sheet.anchor_value=Mock(return_value='18.11.2026');sheet.formula=Mock(return_value=current)
             self.assertFalse(sheet.replace_if_unchanged('O18','0,1','0,3'))
             sheet.page.evaluate.assert_not_called()
     def test_browser_login_requires_secrets_before_network(self):
@@ -205,3 +205,19 @@ class CombinedDamage(unittest.TestCase):
         with patch.dict('os.environ',{},clear=True):
             with self.assertRaises(StructureError):reader._browser_login(page)
         page.goto.assert_not_called()
+
+class StableAnchors(unittest.TestCase):
+    def test_stale_formula_bar_is_not_captured_as_week_heading(self):
+        from unittest.mock import Mock
+        from daily_metrics.io import RevenueSheet
+        sheet=RevenueSheet.__new__(RevenueSheet);sheet.page=Mock()
+        sheet.formula=Mock(side_effect=['18.11.2026','16.11-22.11','16.11-22.11'])
+        self.assertEqual(sheet.anchor_value('G3132'),'16.11-22.11')
+    def test_recheck_allows_transient_stale_read_but_rejects_real_week_change(self):
+        from unittest.mock import Mock
+        from daily_metrics.io import RevenueSheet
+        sheet=RevenueSheet.__new__(RevenueSheet);sheet.page=Mock();sheet.anchors={'G3132':'16.11-22.11'}
+        sheet.anchor_value=Mock(side_effect=['stale','16.11-22.11'])
+        sheet.check_anchors()
+        sheet.anchor_value=Mock(return_value='23.11-29.11')
+        with self.assertRaisesRegex(StructureError,'G3132'):sheet.check_anchors()

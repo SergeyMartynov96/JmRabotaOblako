@@ -142,10 +142,29 @@ class RevenueSheet:
         result=bar.inner_text().strip();self.page.wait_for_timeout(150)
         if result!=bar.inner_text().strip():raise StructureError('Unstable cell selection')
         return result
+    def anchor_value(self,cell):
+        # The name box can update before the formula bar, especially after recalculation.
+        # Require agreement across independent selections before taking a snapshot.
+        first=self.formula(cell);self.page.wait_for_timeout(250)
+        second=self.formula(cell)
+        if first==second:return second
+        self.page.wait_for_timeout(250)
+        third=self.formula(cell)
+        if second!=third:raise StructureError('Unstable revenue anchor '+cell)
+        return third
+
+    def check_anchors(self):
+        for cell,expected in self.anchors.items():
+            for attempt in range(3):
+                try:
+                    if self.anchor_value(cell)==expected:break
+                except StructureError:pass
+                self.page.wait_for_timeout(250)
+            else:raise StructureError('Revenue date/week moved or unreadable ('+cell+')')
+
     def put_blank(self,cell,result):
         if cell not in self.allowed:raise StructureError('Write outside approved revenue cells')
-        for anchor,expected in self.anchors.items():
-            if self.formula(anchor)!=expected:raise StructureError('Revenue date/week moved during run')
+        self.check_anchors()
         if self.formula(cell):return False
         # Paste once: character-by-character typing into a percent-formatted cell can
         # append Sheets' automatic percent suffix twice (e.g. 4,8%%).
@@ -164,8 +183,7 @@ class RevenueSheet:
     def replace_if_unchanged(self,cell,expected,result):
         """Only the approved defect+damage correction may replace a verified old scalar."""
         if cell not in self.allowed:raise StructureError('Write outside approved revenue cells')
-        for anchor,original in self.anchors.items():
-            if self.formula(anchor)!=original:raise StructureError('Revenue date/week moved during run')
+        self.check_anchors()
         actual=self.formula(cell)
         if actual.startswith('=') or not same_cell_value(actual,expected):return False
         self.select(cell)
