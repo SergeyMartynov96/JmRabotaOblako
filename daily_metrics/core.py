@@ -69,28 +69,25 @@ def a1(r, c):
     return col + str(r + 1)
 
 
-def procurement(rows, day):
-    dates = [r for r in range(len(rows)) if date_matches(value(rows,r,1),day)]
-    if not dates:
-        return DASH
-    if len(dates) != 1:
-        raise StructureError('Procurement date duplicated')
-    # Explicit combined total preferred. Otherwise sum ONLY food and Japan totals.
+def procurement_total_columns(rows):
+    """Locate the same approved food/Japan totals without including desserts."""
     headers = [(r,c,text(v)) for r,row in enumerate(rows[:6]) for c,v in enumerate(row)]
     combined = [(r,c) for r,c,t in headers if ('итого' in t or 'сумма' in t) and 'готов' in t and 'япон' in t]
     if not combined:
-        # М42 combined food/Japan sheet labels its combined column "Итого готовая еда".
         food = [(r,c) for r,c,t in headers if 'итого' in t and 'готов' in t]
         japan = [(r,c) for r,c,t in headers if 'итого' in t and 'япон' in t]
-        if len(food) == 1 and not japan:
-            combined = food
-        elif len(food) == 1 and len(japan) == 1:
-            vals = [value(rows,dates[0],c) for _,c in (food[0],japan[0])]
-            return DASH if any(not v or v == DASH for v in vals) else money(sum(number(v) for v in vals))
-    if len(combined) != 1:
-        raise StructureError('Food/Japan total missing or ambiguous')
-    result = value(rows, dates[0], combined[0][1])
-    return DASH if not result or result == DASH else money(result)
+        if len(food) == 1 and not japan:combined = food
+        elif len(food) == 1 and len(japan) == 1:return (food[0][1],japan[0][1])
+    if len(combined) != 1:raise StructureError('Food/Japan total missing or ambiguous')
+    return (combined[0][1],)
+
+
+def procurement(rows, day):
+    dates = [r for r in range(len(rows)) if date_matches(value(rows,r,1),day)]
+    if not dates:return DASH
+    if len(dates) != 1:raise StructureError('Procurement date duplicated')
+    vals=[value(rows,dates[0],c) for c in procurement_total_columns(rows)]
+    return DASH if any(not v or v==DASH for v in vals) else money(sum(number(v) for v in vals))
 
 
 def tops(rows, day):

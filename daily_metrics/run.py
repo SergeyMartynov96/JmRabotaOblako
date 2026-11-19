@@ -13,6 +13,7 @@ from .core import (DASH,StructureError,a1,date_matches,lower_targets,money,numbe
 from .io import RevenueSheet,SUReports,csv_sheet,tops_sheet
 from .extended_io import ExtraSources
 from .extended_run import fill_extra
+from .procurement_run import fill_procurement
 
 TZ=ZoneInfo('Asia/Yekaterinburg')
 
@@ -46,21 +47,20 @@ def fill_branch(browser,client,branch,day,apply,summary,extra_sources=None):
         if len(found)!=1:raise StructureError('Revenue date missing or duplicated')
         row,header=found[0]
         lower_revenue,lower_writeoff=lower_targets(rows,header,day)
-        cells=[(row,c) for c in (2,3,6,7,8,12)]+[lower_revenue,lower_writeoff]
+        cells=[(row,c) for c in (2,3,6,7,8)]+[lower_revenue,lower_writeoff]
         sheet.allowed={a1(r,c) for r,c in cells}
         # Lock the full-year date, weekly heading and lower date before each write.
         anchors=[a1(row,0),a1(lower_revenue[0]-1-day.weekday(),lower_revenue[1]),a1(lower_writeoff[0],lower_writeoff[1]-1)]
         sheet.anchors={cell:sheet.anchor_value(cell) for cell in anchors}
         metrics={}
-        errors=[]
+        errors=fill_procurement(sheet,branch,day,rows,apply,summary,check_date)
         sources={
             'revenue':lambda:revenue_report(client.revenue(branch,day),branch.title,day),
             'writeoff':lambda:writeoff_report(client.writeoff(branch,day),branch.title,day),
             'tops':lambda:tops(tops_sheet(branch.tops_book,day),day),
-            'procurement':lambda:procurement(csv_sheet(branch.book,branch.procurement_gid),day),
         }
         targets={'revenue':[(row,2),lower_revenue],'writeoff':[(row,3)],
-                 'tops':[(row,6),(row,7),(row,8)],'procurement':[(row,12)]}
+                 'tops':[(row,6),(row,7),(row,8)]}
         for metric,load in sources.items():
             # No need to query a source when all of its destinations are already filled.
             if apply and all(sheet.formula(a1(r,c)) for r,c in targets[metric]):

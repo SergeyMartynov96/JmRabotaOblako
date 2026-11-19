@@ -169,6 +169,13 @@ class RevenueSheet:
         if second!=third:raise StructureError('Unstable revenue anchor '+cell)
         return third
 
+    def cell_has_content(self,cell):
+        if self.stable_formula(cell):return True
+        # The formula bar may lag a selection. An existing native scalar (also 0)
+        # must not be mistaken for a blank procurement destination.
+        _,raw=native_cell(self.branch.book,self.branch.revenue_gid,cell)
+        return raw is not None and raw!=''
+
     def anchor_value(self,cell):
         kind,value=native_cell(self.branch.book,self.branch.revenue_gid,cell)
         if kind not in ('date','datetime','string') or value is None or value=='':
