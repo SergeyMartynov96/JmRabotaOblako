@@ -53,6 +53,8 @@ jobs:
         run: |
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > /tmp/lifemart-run.json
           python3 scripts/cloud_schedule.py
+      - name: Install unit test dependencies
+        run: python3 -m pip install -r requirements-test.txt
       - name: Verify safety, allocation and matching
         run: python3 -m unittest discover -s tests -v
       - name: Check completed sending window

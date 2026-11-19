@@ -1,0 +1,5 @@
+# Python dependencies required by the full offline unit test suite.
+playwright==1.62.0
+cryptography==50.0.0
+Pillow==13.0.0
+pypdfium2==5.14.0

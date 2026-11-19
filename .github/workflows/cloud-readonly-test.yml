@@ -33,6 +33,9 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+      - name: Install unit test dependencies
+        if: steps.date.outputs.run == 'true'
+        run: python3 -m pip install -r requirements-test.txt
       - name: Verify safety and parsing
         if: steps.date.outputs.run == 'true'
         run: python3 -m unittest discover -s tests -v
