@@ -1,5 +1,5 @@
 """Manual, read-only source verification. Never logs source financial values."""
-import json,shutil
+import json,shutil,argparse,urllib.parse
 from .config import BRANCHES
 from .io import SUReports,csv_sheet
 from .run import reporting_day
@@ -16,11 +16,68 @@ def safe_error(exc):
     return type(exc).__name__
 
 
+class InvoiceBrowserClient:
+    def __init__(self,context):self.context=context
+    def ensure_authenticated(self):pass
+    def request(self,path,data=None):
+        from .io import SU
+        from .core import StructureError
+        parsed=urllib.parse.urlsplit(path)
+        if data is not None or parsed.scheme or parsed.netloc or parsed.path!='/turnover/waybill/report':
+            raise ValueError('Only invoice report GET allowed')
+        response=self.context.request.get(SU+path,timeout=120000)
+        if response.status!=200:raise StructureError('Invoice read HTTP '+str(response.status))
+        html=response.text()
+        if 'LoginForm[password]' in html:raise StructureError('SU invoice session expired')
+        return html
+
+
+def verify_invoices(browser,client,branches,day):
+    from decimal import Decimal,ROUND_DOWN
+    context=browser.new_context();page=context.new_page()
+    sources=ExtraSources(browser,client);failures=[];verified=0
+    try:
+        sources.bi._browser_login(page)
+        page.close()
+        sources.client=InvoiceBrowserClient(context)
+        for branch in branches:
+            print(json.dumps({'stage':'read','branch':branch.name,'source':'invoices'}),flush=True)
+            try:
+                result=sources.read('invoices',branch,day)
+                if result is None:raise ValueError('No invoice data')
+                rows=csv_sheet(branch.book,branch.revenue_gid)
+                row,header=target_candidates(rows,day,branch.newest_first)[0]
+                layout=extra_targets(rows,header,row,day);r,c=layout['invoices']
+                stored=value(rows,r,c)
+                info={'branch':branch.name,'source':'invoices','valid':True,'receiving_department_filter':True}
+                if stored:
+                    expected=number(stored)
+                    info['matches_rounded_existing']=number(money(result))==expected
+                    info['matches_existing_without_kopecks']=result.quantize(Decimal('1'),rounding=ROUND_DOWN)==expected
+                    info['has_kopecks']=result!=result.quantize(Decimal('1'),rounding=ROUND_DOWN)
+                verified+=1
+                print(json.dumps(info,ensure_ascii=False),flush=True)
+            except Exception as exc:
+                failures.append(branch.name+': invoices')
+                print(json.dumps({'branch':branch.name,'error':safe_error(exc)}),flush=True)
+    finally:page.close();context.close();sources.close()
+    print(json.dumps({'verified_reads':verified,'failures':failures},ensure_ascii=False),flush=True)
+    if failures:raise SystemExit(1)
+
+
 def main():
     from playwright.sync_api import sync_playwright
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--source',choices=('bi','invoices'),default='bi')
+    parser.add_argument('--branch',choices=['all']+[b.name for b in BRANCHES],default='all')
+    args=parser.parse_args();branches=[b for b in BRANCHES if args.branch in ('all',b.name)]
     day=reporting_day();client=SUReports();failures=[];verified=0
     with sync_playwright() as pw:
         browser=pw.chromium.launch(headless=True,executable_path=shutil.which('google-chrome'))
+        if args.source=='invoices':
+            try:verify_invoices(browser,client,branches,day)
+            finally:browser.close()
+            return
         sources=ExtraSources(browser,client)
         try:
             sources.bi.authenticate()
@@ -32,7 +89,7 @@ def main():
                         'queries':[{k:q.get(k) for k in ('columns','granularity','is_timeseries','post_processing')} for q in context.get('queries',[])]},ensure_ascii=False),flush=True)
                 except Exception as exc:
                     print(json.dumps({'source':kind,'template_error':safe_error(exc)}),flush=True)
-            for branch in BRANCHES:
+            for branch in branches:
                 rows=csv_sheet(branch.book,branch.revenue_gid)
                 row,header=target_candidates(rows,day,branch.newest_first)[0]
                 layout=extra_targets(rows,header,row,day)

@@ -201,7 +201,7 @@ class ExtraSources:
             self.client.ensure_authenticated()
             params={'Waybill[insert_date_from]':day.strftime('%d.%m.%Y'),
                     'Waybill[insert_date_to]':day.strftime('%d.%m.%Y'),
-                    'Waybill[department_id][]':[str(branch.department)],
+                    'Waybill[recipient_id][]':[str(branch.department)],
                     'Waybill[contractor_id][]':list(INVOICE_SUPPLIERS),
                     'Waybill[itemsOnPage]':'1000','yt19':'Сформировать'}
             html=self.client.request(INVOICES+'?'+urllib.parse.urlencode(params,doseq=True))

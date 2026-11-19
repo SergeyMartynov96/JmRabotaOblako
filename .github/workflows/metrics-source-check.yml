@@ -1,6 +1,15 @@
 name: LifeMart additional sources check
 on:
   workflow_dispatch:
+    inputs:
+      source:
+        type: choice
+        options: [bi, invoices]
+        default: bi
+      branch:
+        type: choice
+        options: [all, АВ12, М42, Г34]
+        default: all
 permissions:
   contents: read
 jobs:
@@ -17,4 +26,7 @@ jobs:
       - name: Install browser API
         run: python3 -m pip install playwright==1.62.0
       - name: Inspect permitted report schemas without writes
-        run: python3 -m daily_metrics.source_probe
+        env:
+          SOURCE: ${{ inputs.source || 'bi' }}
+          BRANCH: ${{ inputs.branch || 'all' }}
+        run: python3 -m daily_metrics.source_probe --source "$SOURCE" --branch "$BRANCH"

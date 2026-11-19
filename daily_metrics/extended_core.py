@@ -165,12 +165,15 @@ def invoice_total(html,title,day,suppliers):
                 if len(cols)!=1:raise StructureError('Invoice column missing or duplicated')
                 return cols[0]
             amount=column('сумма с ндс');dep=column('подразделение')
+            recipient=column('подразделение получения товара')
             received=column('дата и время приема товара');supplier=column('контрагент')
             values=[]
             for row in table[hi+1:]:
                 # Footer sums have no department and must not be counted twice.
-                if len(row)<=max(amount,dep,received,supplier) or not row[dep].strip():continue
-                if text(row[dep])!=text(title):raise StructureError('Foreign invoice department')
+                if len(row)<=max(amount,dep,recipient,received,supplier):continue
+                destination=row[recipient].strip() or row[dep].strip()
+                if not destination:continue
+                if text(destination)!=text(title):raise StructureError('Foreign invoice receiving department')
                 if not row[received].startswith(day.strftime('%d.%m.%Y')):
                     raise StructureError('Foreign invoice receipt date')
                 if text(row[supplier]) not in {text(name) for name in suppliers.values()}:

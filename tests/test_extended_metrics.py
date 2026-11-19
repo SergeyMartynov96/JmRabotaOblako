@@ -96,11 +96,28 @@ class ReadOnlyBoundaries(unittest.TestCase):
         with self.assertRaises(StructureError):reader.api('/api/v1/chart/1',{'x':'1'})
 
 class InvoiceReport(unittest.TestCase):
-    def sample(self,date='18.11.2026 07:00',store='shop',supplier='Supplier'):
-        return '<table><tr><th>Дата и время приема товара</th><th>Подразделение</th><th>Контрагент</th><th>Сумма без НДС</th><th>Сумма с НДС</th></tr>'+f'<tr><td>{date}</td><td>{store}</td><td>{supplier}</td><td>100</td><td>105</td></tr><tr><td></td><td></td><td></td><td>100</td><td>105</td></tr></table>'
+    def sample(self,date='18.11.2026 07:00',store='shop',supplier='Supplier',accounting='shop'):
+        return '<table><tr><th>Дата и время приема товара</th><th>Подразделение</th><th>Подразделение получения товара</th><th>Контрагент</th><th>Сумма без НДС</th><th>Сумма с НДС</th></tr>'+f'<tr><td>{date}</td><td>{accounting}</td><td>{store}</td><td>{supplier}</td><td>100</td><td>105</td></tr><tr><td></td><td></td><td></td><td></td><td>100</td><td>105</td></tr></table>'
     def test_vat_total_and_no_double_counting_footer(self):
         from daily_metrics.extended_core import invoice_total
         self.assertEqual(invoice_total(self.sample(),'shop',dt.date(2026,11,18),{1:'Supplier'}),105)
+    def test_receiver_can_differ_from_accounting_department(self):
+        from daily_metrics.extended_core import invoice_total
+        self.assertEqual(invoice_total(self.sample(accounting='warehouse'),'shop',dt.date(2026,11,18),{1:'Supplier'}),105)
+    def test_missing_explicit_receiver_uses_document_department(self):
+        from daily_metrics.extended_core import invoice_total
+        self.assertEqual(invoice_total(self.sample(store=''),'shop',dt.date(2026,11,18),{1:'Supplier'}),105)
+    def test_request_uses_receiving_department_filter(self):
+        from unittest.mock import Mock
+        from urllib.parse import urlsplit,parse_qs
+        from daily_metrics.extended_io import ExtraSources
+        from daily_metrics.config import INVOICE_SUPPLIERS
+        client=Mock();client.request.return_value=self.sample(supplier=next(iter(INVOICE_SUPPLIERS.values())))
+        source=ExtraSources(Mock(),client);branch=Mock(department=357,title='shop')
+        self.assertEqual(source.read('invoices',branch,dt.date(2026,11,18)),105)
+        params=parse_qs(urlsplit(client.request.call_args.args[0]).query)
+        self.assertEqual(params['Waybill[recipient_id][]'],['357'])
+        self.assertNotIn('Waybill[department_id][]',params)
     def test_other_day_store_supplier_and_partial_pages_rejected(self):
         from daily_metrics.extended_core import invoice_total
         for html in (self.sample(date='17.11.2026'),self.sample(store='other'),self.sample(supplier='other'),self.sample()+'<a href="?Waybill_page=2">2</a>'):
