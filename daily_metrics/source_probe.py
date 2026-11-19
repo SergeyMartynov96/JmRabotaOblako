@@ -23,7 +23,7 @@ def main():
         browser=pw.chromium.launch(headless=True,executable_path=shutil.which('google-chrome'))
         sources=ExtraSources(browser,client)
         try:
-            for kind in ('uv',):
+            for kind in ('uv','osa','reasons'):
                 print(json.dumps({'stage':'inspect','source':kind}),flush=True)
                 try:
                     form,context=sources.bi.template(kind)
@@ -31,11 +31,15 @@ def main():
                         'queries':[{k:q.get(k) for k in ('columns','granularity','is_timeseries','post_processing')} for q in context.get('queries',[])]},ensure_ascii=False),flush=True)
                 except Exception as exc:
                     print(json.dumps({'source':kind,'template_error':safe_error(exc)}),flush=True)
-            for branch in (BRANCHES[1],):
+            try:
+                labels=sources.bi.api('/api/v1/dataset/3437/column/reason/values/').get('result',[])
+                print(json.dumps({'available_reason_labels':labels},ensure_ascii=False),flush=True)
+            except Exception as exc:print(json.dumps({'reason_labels_error':safe_error(exc)}),flush=True)
+            for branch in BRANCHES:
                 rows=csv_sheet(branch.book,branch.revenue_gid)
                 row,header=target_candidates(rows,day,branch.newest_first)[0]
                 layout=extra_targets(rows,header,row,day)
-                for kind in ('uv',):
+                for kind in ('uv','osa','invoices','reasons'):
                     print(json.dumps({'stage':'read','branch':branch.name,'source':kind}),flush=True)
                     try:
                         result=sources.read(kind,branch,day)

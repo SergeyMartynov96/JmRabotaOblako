@@ -77,7 +77,7 @@ class BIReports:
     def api(self,path,data=None):
         self.authenticate()
         if not (path.startswith('/api/v1/dashboard/') or path.startswith('/api/v1/chart/')
-                or path=='/api/v1/security/csrf_token/'):
+                or path in ('/api/v1/security/csrf_token/','/api/v1/dataset/3437/column/reason/values/')):
             raise StructureError('Unapproved BI read endpoint')
         if data is None:
             response=self.context.request.get(BI+path,timeout=180000)
