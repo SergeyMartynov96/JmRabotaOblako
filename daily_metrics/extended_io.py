@@ -1,5 +1,6 @@
 """Read-only adapters for the owner's three additional BI sources."""
 import json
+import time
 import urllib.parse
 from html.parser import HTMLParser
 from .core import StructureError
@@ -64,11 +65,25 @@ class BIReports:
             context.route('**/*',session_documents)
             page=context.new_page()
             try:
-                response=page.goto(links[0],wait_until='domcontentloaded',timeout=180000)
+                started=time.monotonic()
+                response=page.goto(links[0],wait_until='commit',timeout=180000)
                 location=urllib.parse.urlsplit(page.url)
                 if response is None or response.status!=200 or location.hostname!='bi.lifemart.ru' or not location.path.startswith('/superset/'):
                     raise StructureError('BI authentication failed')
-                html=BILinks();html.feed(page.content());self.csrf=html.csrf
+                remaining=max(1,int(180000-(time.monotonic()-started)*1000))
+                token=page.wait_for_function("""() => {
+                    const input=document.querySelector('input[name="csrf_token"]');
+                    if(input?.value) return input.value;
+                    const meta=document.querySelector('meta[name="csrf-token"]');
+                    if(meta?.content) return meta.content;
+                    for(const el of document.querySelectorAll('[data-bootstrap]')) {
+                        try { const value=JSON.parse(el.getAttribute('data-bootstrap')).common?.csrf_token;
+                              if(value) return value; } catch {}
+                    }
+                    return false;
+                }""",timeout=remaining)
+                self.csrf=token.json_value()
+
             finally:
                 page.close();context.unroute('**/*',session_documents)
             self.context=context
