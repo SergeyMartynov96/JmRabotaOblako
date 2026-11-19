@@ -129,3 +129,33 @@ class OSAPivotTests(unittest.TestCase):
         self.assertEqual(post[0]['options']['index'],['__timestamp'])
         self.assertEqual(post[1],{'operation':'flatten'})
         self.assertEqual(len(saved['queries'][0]['metrics']),5)
+
+class CompleteReportTests(unittest.TestCase):
+    def test_missing_eighth_image_blocks_delivery_preflight(self):
+        import tempfile
+        from pathlib import Path
+        from PIL import Image
+        from types import SimpleNamespace
+        from telegram_reports.run import preflight
+        from daily_metrics.core import StructureError
+        branch=SimpleNamespace(department=153)
+        with tempfile.TemporaryDirectory() as directory:
+            paths=[Path(directory)/(str(i)+'.png') for i in range(8)]
+            for path in paths:Image.new('RGB',(100,100),'white').save(path)
+            preflight([(branch,paths,'М42')],[branch])
+            paths[-1].unlink()
+            with self.assertRaises(StructureError):preflight([(branch,paths,'М42')],[branch])
+            with self.assertRaises(StructureError):preflight([], [branch])
+
+    def test_bi_page_is_reused_and_brought_to_front(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from telegram_reports.render import active_page
+        page=Mock();page.is_closed.return_value=False
+        context=Mock();context.new_page.return_value=page
+        bi=SimpleNamespace(context=context)
+        self.assertIs(active_page(bi),page)
+        self.assertIs(active_page(bi),page)
+        self.assertEqual(context.new_page.call_count,1)
+        self.assertEqual(page.bring_to_front.call_count,2)
+        page.close.assert_not_called()

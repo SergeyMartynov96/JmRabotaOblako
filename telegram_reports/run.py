@@ -79,6 +79,22 @@ def assemble(browser,bi,branch,day,folder,panels,audit,osa):
     return images,text
 
 
+def preflight(collected,branches):
+    from PIL import Image
+    expected={b.department for b in branches}
+    actual=[b.department for b,images,text in collected]
+    if len(actual)!=len(expected) or set(actual)!=expected:raise StructureError('Incomplete branch report collection')
+    for branch,images,text in collected:
+        if len(images)!=8 or len(text)>1024:raise StructureError('Incomplete eight-image report')
+        for path in images:
+            if not path.is_file() or path.stat().st_size>10_000_000:raise StructureError('Required report image missing or oversized')
+            with Image.open(path) as image:
+                width,height=image.size
+                if image.format!='PNG' or min(width,height)<=0 or width+height>10000 or max(width,height)/min(width,height)>20:
+                    raise StructureError('Report image cannot be sent intact')
+                image.verify()
+
+
 def prior_attempts(day):
     token=os.environ['GH_TOKEN'];repo=os.environ['GITHUB_REPOSITORY'];names=set()
     for page in range(1,6):
@@ -132,6 +148,7 @@ def main():
                         images,text=assemble(browser,bi,branch,day,folder,*source)
                         collected.append((branch,images,text))
                 finally:bi.close();browser.close()
+            preflight(collected,branches)
             if args.operation=='deliver':
                 for branch,images,text in collected:
                     if reporting_day()!=day:raise StructureError('Report day changed before delivery')
