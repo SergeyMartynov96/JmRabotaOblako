@@ -105,3 +105,36 @@ def send_connection_test(client,chat_id):
     chat=message.get('chat',{})
     if chat.get('id')!=chat_id or chat.get('type')!='private' or not message.get('message_id'):
         raise BotError('Telegram did not confirm the intended private recipient')
+
+
+def send_album(client,chat_id,paths,caption):
+    """Send one complete album, without retrying ambiguous delivery failures."""
+    from pathlib import Path
+    import uuid
+    if not 2<=len(paths)<=10:raise BotError('Album must contain 2 to 10 images')
+    boundary='lifemart-'+uuid.uuid4().hex
+    media=[];parts=[]
+    def field(name,value):
+        parts.append(('--'+boundary+'\r\nContent-Disposition: form-data; name="'+name+'"\r\n\r\n'+value+'\r\n').encode())
+    for i,path in enumerate(paths):
+        data=Path(path).read_bytes()
+        if not data.startswith(b'\x89PNG') or len(data)>10_000_000:raise BotError('Invalid or oversized report image')
+        name='photo'+str(i)
+        item={'type':'photo','media':'attach://'+name}
+        if i==0:item['caption']=caption
+        media.append(item)
+        parts.append(('--'+boundary+'\r\nContent-Disposition: form-data; name="'+name+'"; filename="report.png"\r\nContent-Type: image/png\r\n\r\n').encode()+data+b'\r\n')
+    field('chat_id',str(chat_id));field('media',json.dumps(media,ensure_ascii=False))
+    parts.append(('--'+boundary+'--\r\n').encode())
+    request=urllib.request.Request('https://api.telegram.org/bot'+client._token+'/sendMediaGroup',data=b''.join(parts),
+        headers={'Content-Type':'multipart/form-data; boundary='+boundary})
+    try:
+        with urllib.request.urlopen(request,timeout=120) as response:payload=json.load(response)
+    except Exception as exc:
+        raise BotError('Telegram album delivery unconfirmed ('+type(exc).__name__+'); do not automatically retry') from None
+    result=payload.get('result',[])
+    if not payload.get('ok') or len(result)!=len(paths):raise BotError('Telegram album delivery incomplete; do not automatically retry')
+    for message in result:
+        if message.get('chat',{}).get('id')!=chat_id or message.get('chat',{}).get('type')!='private':
+            raise BotError('Telegram album recipient mismatch')
+    return len(result)
