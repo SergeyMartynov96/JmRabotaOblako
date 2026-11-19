@@ -29,6 +29,26 @@ def money(value):
     return str(number(value).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
 
 
+def same_cell_value(actual, expected):
+    """Compare numeric values without accepting malformed percent strings as numbers."""
+    actual=str(actual).strip();expected=str(expected).strip()
+    if actual==expected:
+        return True
+    def parsed(raw):
+        raw=re.sub(r'\s','',raw)
+        if not re.fullmatch(r'[+-]?\d+(?:[.,]\d+)?%?',raw):
+            return None
+        percent=raw.endswith('%')
+        n=Decimal(raw.rstrip('%').replace(',','.'))
+        return n/100 if percent else n
+    a,b=parsed(actual),parsed(expected)
+    if a is None or b is None:
+        return False
+    if '%' not in expected and '%' in actual:
+        return False
+    return a==b
+
+
 def value(rows, r, c):
     return rows[r][c].strip() if 0 <= r < len(rows) and 0 <= c < len(rows[r]) else ''
 

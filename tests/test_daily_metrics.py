@@ -92,3 +92,26 @@ class SharedRevenueReport(unittest.TestCase):
         for branch in BRANCHES:
             with self.assertRaises(TimeoutError):client.revenue(branch,DAY)
         client.request.assert_called_once()
+
+class PercentEntryRegression(unittest.TestCase):
+    def test_percent_precision_is_numeric_not_string_equality(self):
+        from daily_metrics.core import same_cell_value
+        self.assertTrue(same_cell_value('4,80%','4,8%'))
+        self.assertTrue(same_cell_value('0,048','4,8%'))
+        self.assertFalse(same_cell_value('4,8','4,8%'))
+        self.assertFalse(same_cell_value('4,8%%','4,8%'))
+        self.assertFalse(same_cell_value('4,80%%','4,8%'))
+        self.assertFalse(same_cell_value('4,8%','4,8'))
+        self.assertTrue(same_cell_value('182 951','182951'))
+        self.assertTrue(same_cell_value('—','—'))
+    def test_blank_percent_uses_single_paste_and_verifies_formatted_number(self):
+        from daily_metrics.io import RevenueSheet
+        from unittest.mock import Mock
+        sheet=object.__new__(RevenueSheet)
+        sheet.allowed={'L18'};sheet.anchors={}
+        sheet.formula=Mock(side_effect=['','4,80%'])
+        sheet.select=Mock();sheet.page=Mock()
+        self.assertTrue(sheet.put_blank('L18','4,8%'))
+        sheet.page.keyboard.type.assert_not_called()
+        sheet.page.evaluate.assert_called_once_with('(text) => navigator.clipboard.writeText(text)','4,8%')
+        sheet.page.keyboard.press.assert_any_call('Control+V')

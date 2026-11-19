@@ -8,7 +8,7 @@ import re
 import time
 import urllib.parse
 import urllib.request
-from .core import StructureError, MONTHS
+from .core import StructureError, MONTHS, same_cell_value
 
 SU='https://su.lifemart.ru'
 REVENUE='/receipts/receiptsGeneral/ajax_report'
@@ -97,6 +97,7 @@ class RevenueSheet:
     def __init__(self,browser,branch,day):
         self.branch=branch;self.day=day;self.allowed=set();self.anchors={}
         self.page=browser.new_page()
+        self.page.context.grant_permissions(['clipboard-read','clipboard-write'],origin='https://docs.google.com')
         self.page.goto(f'https://docs.google.com/spreadsheets/d/{branch.book}/edit?gid={branch.revenue_gid}',
                        wait_until='domcontentloaded',timeout=60000)
         self.page.locator('#t-name-box').wait_for(timeout=45000)
@@ -117,12 +118,15 @@ class RevenueSheet:
         for anchor,expected in self.anchors.items():
             if self.formula(anchor)!=expected:raise StructureError('Revenue date/week moved during run')
         if self.formula(cell):return False
-        self.select(cell);self.page.keyboard.type(result);self.page.keyboard.press('Enter')
+        # Paste once: character-by-character typing into a percent-formatted cell can
+        # append Sheets' automatic percent suffix twice (e.g. 4,8%%).
+        self.select(cell)
+        self.page.evaluate('(text) => navigator.clipboard.writeText(text)',result)
+        self.page.keyboard.press('Control+V')
+        self.page.wait_for_timeout(250)
+        self.page.keyboard.press('Enter')
         for _ in range(8):
             self.page.wait_for_timeout(500)
             actual=self.formula(cell)
-            if actual==result:return True
-            # Locale may normalize decimal/percent literals.
-            if actual.replace(' ','').replace(',','.')==result.replace(' ','').replace(',','.'):
-                return True
+            if same_cell_value(actual,result):return True
         raise StructureError('Revenue write not verified')
