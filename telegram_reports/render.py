@@ -5,10 +5,18 @@ from daily_metrics.extended_io import BI
 from daily_metrics.core import StructureError
 
 
+def active_page(bi):
+    page=getattr(bi,'report_page',None)
+    if page is None or page.is_closed():
+        page=bi.context.new_page();bi.report_page=page
+    page.bring_to_front()
+    return page
+
+
 def capture_chart(bi,form,payload,destination,width=900,height=430):
     deadline=time.monotonic()+180
     def remaining():return max(1,int((deadline-time.monotonic())*1000))
-    page=bi.context.new_page();served=[]
+    page=active_page(bi);served=[]
     page.set_viewport_size({'width':width,'height':height})
     def serve(route):
         served.append(True)
@@ -19,8 +27,12 @@ def capture_chart(bi,form,payload,destination,width=900,height=430):
     page.route('**/superset/explore_json/**',serve)
     try:
         params={'form_data':json.dumps(form,ensure_ascii=False),'standalone':'1','height':height}
+        phase='document'
+        print(json.dumps({'renderer_phase':phase,'slice_id':form.get('slice_id')}),flush=True)
         response=page.goto(BI+'/superset/explore/?'+urllib.parse.urlencode(params),wait_until='commit',timeout=remaining())
         if response is None or response.status!=200:raise StructureError('BI renderer document failed')
+        phase='visible_content'
+        page.wait_for_function("() => document.visibilityState==='visible'",timeout=remaining())
         page.wait_for_function("""() => !!document.querySelector('svg,canvas,table') && !document.querySelector('[data-test="loading-indicator"]')""",timeout=remaining())
         # Wait for the validated result to reach the actual renderer, not just an empty scaffold.
         while not served and time.monotonic()<deadline:page.wait_for_timeout(100)
@@ -32,6 +44,7 @@ def capture_chart(bi,form,payload,destination,width=900,height=430):
         page.wait_for_function("() => document.fonts.status==='loaded'",timeout=remaining())
         # D3/ECharts animate SVG attributes in JavaScript; CSS alone does not stop
         # those transitions. Require the actual rendered image to settle.
+        phase='settled_image'
         previous=None;stable=0
         while time.monotonic()<deadline:
             current=page.screenshot(timeout=remaining())
@@ -46,10 +59,13 @@ def capture_chart(bi,form,payload,destination,width=900,height=430):
         else:page.screenshot(path=str(destination))
         return {'validated_result_rendered':True}
     except Exception:
+        print(json.dumps({'renderer_failed_phase':locals().get('phase','setup'),'slice_id':form.get('slice_id')}),flush=True)
         try:page.screenshot(path=str(Path(destination).with_suffix(".failed.png")),timeout=5000)
         except Exception:pass
         raise
-    finally:page.close()
+    finally:
+        page.unroute('**/api/v1/chart/data**',serve)
+        page.unroute('**/superset/explore_json/**',serve)
 
 
 def compose(browser,panels,destination,columns=1,heading=None,width=1800):
@@ -70,7 +86,7 @@ def compose(browser,panels,destination,columns=1,heading=None,width=1800):
 
 def query_from_renderer(bi,form):
     """Ask Superset's own chart plugin to build a missing saved query; block execution."""
-    page=bi.context.new_page();captured=[]
+    page=active_page(bi);captured=[]
     deadline=time.monotonic()+180
     def intercept(route):
         if route.request.method=='POST':
@@ -78,10 +94,13 @@ def query_from_renderer(bi,form):
             except Exception:pass
         route.fulfill(status=200,content_type='application/json',body='{"result":[]}')
     page.route('**/api/v1/chart/data**',intercept)
-    page.route('**/superset/explore_json/**',lambda route:route.abort())
+    def abort_legacy(route):route.abort()
+    page.route('**/superset/explore_json/**',abort_legacy)
     try:
         page.goto(BI+'/superset/explore/?'+urllib.parse.urlencode({'form_data':json.dumps(form,ensure_ascii=False),'standalone':1}),wait_until='commit',timeout=180000)
         while not captured and time.monotonic()<deadline:page.wait_for_timeout(100)
         if len(captured)!=1 or not captured[0].get('queries'):raise StructureError('Chart plugin did not build one report query')
         return captured[0]
-    finally:page.close()
+    finally:
+        page.unroute('**/api/v1/chart/data**',intercept)
+        page.unroute('**/superset/explore_json/**',abort_legacy)

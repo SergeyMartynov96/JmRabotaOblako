@@ -13,7 +13,7 @@ from daily_metrics.source_probe import safe_error
 from .catalog import ReportCharts,CHARTS
 from .session import ReportSUReports
 from .core import weekly_period,OSA_METRICS
-from .render import capture_chart,compose
+from .render import capture_chart,compose,active_page
 from .sheets import capture_week
 from .invoices import capture_invoices
 from .security import seal_images
@@ -45,20 +45,26 @@ def caption(branch,day,osa):
         '8. OSA 20:00 за вчера — '+format(osa[1],'.1f').replace('.',',')+'%')
 
 
-def collect(browser,bi,charts,branch,day,folder):
+def collect_bi(browser,bi,charts,branch,day,folder):
     folder.mkdir();start,end=weekly_period(day+dt.timedelta(days=1))
     panels={};audit={}
     for kind in CHARTS:
+        active_page(bi)
         print(json.dumps({'branch':branch.name,'stage':'query','source':kind}),flush=True)
         left,right=(day,day+dt.timedelta(days=1)) if kind in ('reasons','top_qty','top_rub') else (start,end)
         form,payload=(charts.read_stop(branch,left,right) if kind=='uv_stop' else charts.read(kind,branch,left,right))
         audit[kind]={'form':form,'payload':payload}
+        (folder/'bi-source.json').write_text(json.dumps(audit,ensure_ascii=False))
         size=(1800,950) if kind=='uv_dishes' else (1800,460) if kind=='uv_stop' else (880,420)
         raw=folder/(kind+'.png')
         print(json.dumps({'branch':branch.name,'stage':'render','source':kind}),flush=True)
         capture_chart(bi,form,payload,raw,*size)
         panels[kind]=(CHARTS[kind][1],raw)
     osa=osa_yesterday(audit['osa_food_japan']['payload'],day)
+    return panels,audit,osa
+
+
+def assemble(browser,bi,branch,day,folder,panels,audit,osa):
     images=[folder/f'{index:02}.png' for index in range(8)]
     capture_week(bi.context,branch,day,images[0])
     capture_invoices(bi.context,branch,day,images[1])
@@ -112,14 +118,18 @@ def main():
         root=Path(directory);collected=[]
         try:
             with sync_playwright() as pw:
-                browser=pw.chromium.launch(headless=True,executable_path=shutil.which('google-chrome'))
+                browser=pw.chromium.launch(headless=not bool(os.getenv('DISPLAY')),executable_path=shutil.which('google-chrome'))
                 client=ReportSUReports();client.ensure_authenticated()
                 bi=BIReports(browser,client);charts=ReportCharts(bi)
                 try:
                     bi.authenticate()
+                    captured=[]
                     for branch in branches:
                         folder=root/str(branch.department)
-                        images,text=collect(browser,bi,charts,branch,day,folder)
+                        captured.append((branch,folder,collect_bi(browser,bi,charts,branch,day,folder)))
+                    # No other browser page is opened until every BI image has finished.
+                    for branch,folder,source in captured:
+                        images,text=assemble(browser,bi,branch,day,folder,*source)
                         collected.append((branch,images,text))
                 finally:bi.close();browser.close()
             if args.operation=='deliver':

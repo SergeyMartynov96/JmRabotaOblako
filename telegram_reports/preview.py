@@ -22,14 +22,15 @@ def main():
         folder=Path(directory)
         try:
             with sync_playwright() as pw:
-                browser=pw.chromium.launch(headless=True,executable_path=shutil.which('google-chrome'))
+                browser=pw.chromium.launch(headless=not bool(os.getenv('DISPLAY')),executable_path=shutil.which('google-chrome'))
                 client=ReportSUReports();client.ensure_authenticated()
                 bi=BIReports(browser,client)
                 try:
                     bi.authenticate();charts=ReportCharts(bi);day=reporting_day()
                     start,end=weekly_period(day+__import__('datetime').timedelta(days=1))
-                    for kind in ('uv_stop','osa_food_japan'):
-                        form,payload=(charts.read_stop(BRANCHES[1],start,end) if kind=='uv_stop' else charts.read(kind,BRANCHES[1],start,end))
+                    for kind in ('reasons','uv_stop','osa_food_japan'):
+                        left,right=(day,day+__import__('datetime').timedelta(days=1)) if kind=='reasons' else (start,end)
+                        form,payload=(charts.read_stop(BRANCHES[0],left,right) if kind=='uv_stop' else charts.read(kind,BRANCHES[0],left,right))
                         (folder/(kind+'.json')).write_text(json.dumps({'form':form,'payload':payload},ensure_ascii=False))
                         capture_chart(bi,form,payload,folder/(kind+'.png'),width=1800 if kind=='uv_stop' else 900,height=500)
                         print(json.dumps({'source':kind,'native_chart_captured':True}),flush=True)

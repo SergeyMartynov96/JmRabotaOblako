@@ -21,7 +21,7 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 -m pip install playwright==1.62.0 cryptography==50.0.0 Pillow==13.0.0 pypdfium2==5.14.0
-      - run: python3 -m telegram_reports.preview
+      - run: xvfb-run -a python3 -m telegram_reports.preview
       - name: Upload encrypted visual proof only
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
