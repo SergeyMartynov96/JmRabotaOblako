@@ -125,6 +125,10 @@ def main():
         browser=pw.chromium.launch(headless=True,executable_path=shutil.which('google-chrome'))
         extra_sources=ExtraSources(browser,client)
         try:
+            # Prepare the BI browser session before heavyweight Sheets editors.
+            # A failed preparation must not block independent base metrics.
+            try:extra_sources.bi.authenticate()
+            except Exception as exc:print('BI preparation unavailable ('+type(exc).__name__+')',flush=True)
             for branch in BRANCHES:
                 if args.branch not in ('all',branch.name):continue
                 try:

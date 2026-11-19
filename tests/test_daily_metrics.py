@@ -125,7 +125,7 @@ class LazySUAuthentication(unittest.TestCase):
         client=Mock();pw=Mock();manager=Mock()
         manager.__enter__=Mock(return_value=pw);manager.__exit__=Mock(return_value=False)
         module=types.ModuleType('playwright.sync_api');module.sync_playwright=Mock(return_value=manager)
-        with patch.dict('os.environ',{'GITHUB_ACTIONS':'true','EXPECTED_RUN_DATE':now,'GITHUB_STEP_SUMMARY':''}),patch.object(sys,'argv',['metrics','--branch','М42']),patch.dict(sys.modules,{'playwright.sync_api':module}),patch.object(run,'SUReports',return_value=client),patch.object(run,'fill_branch',return_value=[]):
+        with patch.dict('os.environ',{'GITHUB_ACTIONS':'true','EXPECTED_RUN_DATE':now,'GITHUB_STEP_SUMMARY':''}),patch.object(sys,'argv',['metrics','--branch','М42']),patch.dict(sys.modules,{'playwright.sync_api':module}),patch.object(run,'SUReports',return_value=client),patch.object(run,'ExtraSources',return_value=Mock()),patch.object(run,'fill_branch',return_value=[]):
             run.main()
         client.login.assert_not_called()
     def test_login_is_shared_by_required_sources(self):
