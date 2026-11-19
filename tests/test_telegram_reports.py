@@ -174,3 +174,30 @@ class CleanupDeadlineTests(unittest.TestCase):
             self.assertEqual(seconds,20)
             with patch('telegram_reports.security.os._exit') as stop,contextlib.redirect_stdout(io.StringIO()):callback()
             seal.assert_called_once();stop.assert_called_once_with(1)
+
+class SUAuthenticationTests(unittest.TestCase):
+    def test_network_retries_share_one_login_deadline(self):
+        import urllib.error
+        from unittest.mock import Mock,patch
+        from telegram_reports.session import ReportSUReports
+        def response():
+            stream=Mock();stream.__enter__=Mock(return_value=stream);stream.__exit__=Mock(return_value=False)
+            stream.read1.side_effect=[b'<html>ok</html>',b'']
+            return stream
+        client=ReportSUReports();client.opener=Mock()
+        client.opener.open.side_effect=[urllib.error.URLError('temporary'),response(),response()]
+        with patch('telegram_reports.session.time.monotonic',return_value=100):
+            self.assertEqual(client.request('/site/login'),'<html>ok</html>')
+            deadline=client.login_deadline
+            self.assertEqual(client.request('/site/login',{'test':'value'}),'<html>ok</html>')
+            self.assertEqual(client.login_deadline,deadline)
+        self.assertEqual(client.opener.open.call_count,3)
+
+    def test_access_denial_is_not_retried(self):
+        import urllib.error
+        from unittest.mock import Mock
+        from telegram_reports.session import ReportSUReports
+        client=ReportSUReports();client.opener=Mock()
+        client.opener.open.side_effect=urllib.error.HTTPError('https://example.invalid',403,'Denied',{},None)
+        with self.assertRaises(urllib.error.HTTPError):client.request('/site/login')
+        self.assertEqual(client.opener.open.call_count,1)
