@@ -361,3 +361,26 @@ class StaleFormulaRecovery(unittest.TestCase):
         with patch('daily_metrics.io.native_cell',return_value=('number',None)):
             self.assertEqual(sheet._confirm_selection('J2233','=SUM(A1:A2)'), '')
         sheet._reload_selection.assert_called_once_with('J2233')
+
+class InitialBIPageReadiness(unittest.TestCase):
+    def test_accounting_commit_waits_for_active_superset_document(self):
+        from unittest.mock import Mock,ANY
+        from daily_metrics.extended_io import BIReports,BI
+        browser=Mock();client=Mock();client._authenticated=True;client.opener.handlers=[]
+        page=browser.new_context.return_value.new_page.return_value
+        page.url=BI+'/login/accounting';page.goto.return_value.status=200
+        events=[]
+        page.bring_to_front.side_effect=lambda:events.append('active')
+        def commit(*args,**kwargs):
+            events.append('commit');return Mock(status=200)
+        page.goto.side_effect=commit
+        def ready(*args,**kwargs):
+            events.append('ready');page.url=BI+'/superset/dashboard/37/'
+        page.wait_for_url.side_effect=ready
+        def token(*args,**kwargs):
+            events.append('csrf');return Mock(json_value=lambda:'test-csrf')
+        page.wait_for_function.side_effect=token
+        reader=BIReports(browser,client);reader.authenticate()
+        self.assertEqual(events,['active','commit','ready','csrf'])
+        page.wait_for_url.assert_called_once_with(BI+'/superset/**',wait_until='domcontentloaded',timeout=ANY)
+        self.assertIs(reader.context,browser.new_context.return_value)
