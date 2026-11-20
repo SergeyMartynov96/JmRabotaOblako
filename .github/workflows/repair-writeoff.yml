@@ -1,0 +1,21 @@
+name: Repair failed writeoff placeholders
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lifemart-daily-metrics
+  cancel-in-progress: false
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      LIFEMART_LOGIN: ${{ secrets.LIFEMART_LOGIN }}
+      LIFEMART_PASSWORD: ${{ secrets.LIFEMART_PASSWORD }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: python3 -m pip install playwright==1.62.0
+      - run: python3 -m daily_metrics.repair_writeoff
