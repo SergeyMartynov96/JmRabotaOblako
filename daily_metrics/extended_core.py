@@ -10,7 +10,7 @@ REASON_ALIASES={
     'consumables':('расходка','расходные материалы'),
     'damage':('порча','брак'),
     'marketing':('маркетинг',),
-    'tasting':('дегустация',),
+    'tasting':('дегустация','обучение'),
     'sg_rotation':('сг ротация','срок годности ротация'),
     'sg_turnover':('сг товароб','сг товарооборот','срок годности товарооборот','срок годности товароб'),
     'sg_min_sum':('сг мин сум','срок годности мин сумма','срок годности минимальная сумма'),
@@ -136,11 +136,6 @@ def bi_reasons(payload,metric):
     for row in bi_rows(payload):
         if 'reason' not in row or metric not in row:raise StructureError('BI reason columns missing')
         raw=key(row['reason']);name=reason_key(row['reason'])
-        # No training column exists in the owner's current sheet layout.
-        # Do not assign it to an unrelated reason or block the mapped reasons.
-        if name is None and raw==key('Обучение'):
-            print('BI: training reason has no destination column; left unassigned',flush=True)
-            continue
         if name is None:raise StructureError('Unmapped BI reason')
         if raw in seen:raise StructureError('BI reason duplicated')
         seen.add(raw)
@@ -150,6 +145,9 @@ def bi_reasons(payload,metric):
             values[name]=values.get(name,Decimal(0))+result
             if raw=='порча':values.damage_base=result
             if raw=='брак':values.has_defect=True
+        elif name=='tasting':
+            # Owner maps training into tasting, including days with both causes.
+            values[name]=values.get(name,Decimal(0))+result
         else:
             if name in values:raise StructureError('BI reason duplicated')
             values[name]=result

@@ -293,14 +293,16 @@ class BIHTTPAuthentication(unittest.TestCase):
         browser.new_context.assert_not_called()
 
 
-class UnassignedTrainingReason(unittest.TestCase):
-    def test_training_does_not_block_known_reasons_or_enter_another_column(self):
+class TrainingReasonMapping(unittest.TestCase):
+    def test_training_is_added_to_tasting_without_affecting_other_reasons(self):
         from decimal import Decimal
         from daily_metrics.extended_core import bi_reasons
         payload={'result':[{'status':'success','data':[
             {'reason':'Обучение','Списания %':.001},
             {'reason':'Срок годности. Закуп','Списания %':.02}]}]}
-        self.assertEqual(bi_reasons(payload,'Списания %'),{'sg_purchase':Decimal('2.00')})
+        self.assertEqual(bi_reasons(payload,'Списания %'),{'tasting':Decimal('.100'),'sg_purchase':Decimal('2.00')})
+        payload['result'][0]['data'].append({'reason':'Дегустация','Списания %':.002})
+        self.assertEqual(bi_reasons(payload,'Списания %')['tasting'],Decimal('.300'))
         payload['result'][0]['data'][0]['reason']='Unknown schema reason'
         with self.assertRaises(StructureError):bi_reasons(payload,'Списания %')
 
