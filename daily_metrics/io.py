@@ -172,9 +172,9 @@ class RevenueSheet:
     def _confirm_selection(self,cell,formula):
         _,raw=native_cell(self.branch.book,self.branch.revenue_gid,cell)
         native_blank=raw is None or raw==''
+        if not native_blank:return formula or str(raw)
         if formula.startswith('='):return formula
-        if native_blank and not formula:return formula
-        if not native_blank and formula and (same_cell_value(formula,str(raw)) or same_cell_value(str(raw),formula)):return formula
+        if not formula:return formula
         # After a paste the formula bar can retain the previous cell's scalar.
         # A name-box value alone does not prove the grid finished selecting.
         self.page.keyboard.press('Escape')

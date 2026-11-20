@@ -148,3 +148,20 @@ class LazySUAuthentication(unittest.TestCase):
             with self.assertRaises(TimeoutError):client.revenue(branch,DAY)
             with self.assertRaises(TimeoutError):client.writeoff(branch,DAY)
         client.login.assert_called_once();client.request.assert_not_called()
+
+class FailedSourcePreservesDestination(unittest.TestCase):
+    def test_writeoff_timeout_does_not_write_a_missing_data_dash(self):
+        from unittest.mock import Mock,patch
+        from daily_metrics import run
+        from daily_metrics.config import BRANCHES
+        sheet=Mock();sheet.refresh.return_value=[['']*19 for _ in range(12)]
+        sheet.formula.side_effect=lambda cell:DAY.strftime('%d.%m.%Y') if cell=='A2' else 'occupied'
+        sheet.cell_has_content.side_effect=lambda cell:cell!='D2'
+        sheet.is_reporting_date.return_value=True
+        client=Mock();client.writeoff.side_effect=TimeoutError()
+        summary={'written':0,'preserved':0,'missing':0,'planned':0}
+        with patch.object(run,'RevenueSheet',return_value=sheet),patch.object(run,'target_candidates',return_value=[(1,0)]),patch.object(run,'lower_targets',return_value=((9,2),(9,11))),patch.object(run,'fill_procurement',return_value=[]):
+            errors=run.fill_branch(Mock(),client,BRANCHES[0],DAY,True,summary)
+        self.assertEqual(errors,['writeoff source failed (TimeoutError)'])
+        sheet.put_blank.assert_not_called()
+        self.assertEqual(summary['missing'],0)
