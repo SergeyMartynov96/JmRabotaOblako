@@ -2,7 +2,8 @@
 import datetime as dt,json,os,shutil
 from .config import BRANCHES
 from .core import DASH,StructureError,a1,money,number,target_candidates,writeoff_report
-from .io import RevenueSheet,SUReports,csv_sheet,native_cell
+from .session import ReportSUReports as SUReports
+from .io import RevenueSheet,csv_sheet,native_cell
 from .run import reporting_day,check_date
 
 

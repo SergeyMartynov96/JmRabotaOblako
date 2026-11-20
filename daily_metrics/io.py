@@ -178,7 +178,7 @@ class RevenueSheet:
         # After a paste the formula bar can retain the previous cell's scalar.
         # A name-box value alone does not prove the grid finished selecting.
         self.page.keyboard.press('Escape')
-        self.select('A1' if cell.upper()!='A1' else 'A2')
+        self.select('ZZ1' if cell.upper()!='ZZ1' else 'ZY1')
         for _ in range(5):
             actual=self.formula(cell)
             if actual.startswith('='):return actual

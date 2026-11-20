@@ -10,7 +10,8 @@ from zoneinfo import ZoneInfo
 from .config import BRANCHES
 from .core import (DASH,StructureError,a1,date_matches,lower_targets,money,number,
                    procurement,revenue_report,target_candidates,tops,value,writeoff_report)
-from .io import RevenueSheet,SUReports,csv_sheet,tops_sheet
+from .session import ReportSUReports as SUReports
+from .io import RevenueSheet,csv_sheet,tops_sheet
 from .extended_io import ExtraSources
 from .extended_run import fill_extra
 from .procurement_run import fill_procurement
@@ -63,7 +64,7 @@ def fill_branch(browser,client,branch,day,apply,summary,extra_sources=None):
                  'tops':[(row,6),(row,7),(row,8)]}
         for metric,load in sources.items():
             # No need to query a source when all of its destinations are already filled.
-            if apply and all(sheet.formula(a1(r,c)) for r,c in targets[metric]):
+            if apply and all(sheet.cell_has_content(a1(r,c)) for r,c in targets[metric]):
                 summary['preserved']+=len(targets[metric]);continue
             print(branch.name+': reading '+metric,flush=True)
             try:metrics[metric]=load()
@@ -80,12 +81,12 @@ def fill_branch(browser,client,branch,day,apply,summary,extra_sources=None):
                         summary['written']+=1;summary['missing']+=literal==DASH
                     else:summary['preserved']+=1
                 else:
-                    if not sheet.formula(a1(r,c)):
+                    if not sheet.cell_has_content(a1(r,c)):
                         summary['planned']+=1;summary['missing']+=literal==DASH
                     else:summary['preserved']+=1
         # Formula E is never edited. Wait for recalculation, copy its DISPLAYED rounded value.
         r,c=lower_writeoff
-        if not sheet.formula(a1(r,c)):
+        if not sheet.cell_has_content(a1(r,c)):
             current=sheet.refresh()
             displayed=value(current,row,4)
             try:
