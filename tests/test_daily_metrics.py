@@ -59,6 +59,7 @@ class BlankOnlyWrite(unittest.TestCase):
         for existing in ('123','0','—','=SUM(A1:A2)'):
             sheet=object.__new__(RevenueSheet)
             sheet.allowed={'C5'};sheet.anchors={};sheet.formula=Mock(return_value=existing)
+            sheet._confirm_selection=lambda cell,result:result
             sheet.page=Mock()
             self.assertFalse(sheet.put_blank('C5','999'))
             sheet.page.keyboard.type.assert_not_called()

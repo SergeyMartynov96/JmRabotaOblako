@@ -163,11 +163,28 @@ class RevenueSheet:
         # Require agreement across independent selections before taking a snapshot.
         first=self.formula(cell);self.page.wait_for_timeout(250)
         second=self.formula(cell)
-        if first==second:return second
+        if first==second:return self._confirm_selection(cell,second)
         self.page.wait_for_timeout(250)
         third=self.formula(cell)
         if second!=third:raise StructureError('Unstable revenue anchor '+cell)
-        return third
+        return self._confirm_selection(cell,third)
+
+    def _confirm_selection(self,cell,formula):
+        _,raw=native_cell(self.branch.book,self.branch.revenue_gid,cell)
+        native_blank=raw is None or raw==''
+        if formula.startswith('='):return formula
+        if native_blank and not formula:return formula
+        if not native_blank and formula and (same_cell_value(formula,str(raw)) or same_cell_value(str(raw),formula)):return formula
+        # After a paste the formula bar can retain the previous cell's scalar.
+        # A name-box value alone does not prove the grid finished selecting.
+        self.page.keyboard.press('Escape')
+        self.select('A1' if cell.upper()!='A1' else 'A2')
+        for _ in range(5):
+            actual=self.formula(cell)
+            if actual.startswith('='):return actual
+            if (native_blank and not actual) or (not native_blank and actual and (same_cell_value(actual,str(raw)) or same_cell_value(str(raw),actual))):return actual
+            self.page.wait_for_timeout(300)
+        raise StructureError('Selected cell differs from native data ('+cell+')')
 
     def cell_has_content(self,cell):
         if self.stable_formula(cell):return True

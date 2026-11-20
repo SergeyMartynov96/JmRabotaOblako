@@ -215,6 +215,7 @@ class CombinedDamage(unittest.TestCase):
         for current in ('0,7','=0.1'):
             sheet=RevenueSheet.__new__(RevenueSheet);sheet.allowed={'O18'};sheet.anchors={'A6':'18.11.2026'}
             sheet.page=Mock();sheet.anchor_value=Mock(return_value='18.11.2026');sheet.formula=Mock(return_value=current)
+            sheet._confirm_selection=lambda cell,result:result
             self.assertFalse(sheet.replace_if_unchanged('O18','0,1','0,3'))
             sheet.page.evaluate.assert_not_called()
     def test_browser_login_requires_secrets_before_network(self):
@@ -231,6 +232,7 @@ class StableAnchors(unittest.TestCase):
         from daily_metrics.io import RevenueSheet
         sheet=RevenueSheet.__new__(RevenueSheet);sheet.page=Mock()
         sheet.formula=Mock(side_effect=['18.11.2026','16.11-22.11','16.11-22.11'])
+        sheet._confirm_selection=lambda cell,result:result
         self.assertEqual(sheet.stable_formula('G3132'),'16.11-22.11')
     def test_recheck_allows_transient_stale_read_but_rejects_real_week_change(self):
         from unittest.mock import Mock
@@ -301,3 +303,20 @@ class UnassignedTrainingReason(unittest.TestCase):
         self.assertEqual(bi_reasons(payload,'Списания %'),{'sg_purchase':Decimal('2.00')})
         payload['result'][0]['data'][0]['reason']='Unknown schema reason'
         with self.assertRaises(StructureError):bi_reasons(payload,'Списания %')
+
+
+class NativeSelectionConfirmation(unittest.TestCase):
+    def test_stale_scalar_cannot_hide_empty_destination(self):
+        from unittest.mock import Mock,patch
+        from daily_metrics.io import RevenueSheet
+        sheet=RevenueSheet.__new__(RevenueSheet);sheet.page=Mock();sheet.branch=Mock()
+        sheet.select=Mock();sheet.formula=Mock(return_value='')
+        with patch('daily_metrics.io.native_cell',return_value=('number',None)):
+            self.assertEqual(sheet._confirm_selection('L10','12345'),'')
+        sheet.page.keyboard.press.assert_called_once_with('Escape')
+    def test_empty_result_formula_is_preserved(self):
+        from unittest.mock import Mock,patch
+        from daily_metrics.io import RevenueSheet
+        sheet=RevenueSheet.__new__(RevenueSheet);sheet.branch=Mock()
+        with patch('daily_metrics.io.native_cell',return_value=('string',None)):
+            self.assertEqual(sheet._confirm_selection('L10','=IF(TRUE,"",1)'),'=IF(TRUE,"",1)')
