@@ -219,3 +219,20 @@ class CaptionFormatTests(unittest.TestCase):
         self.assertNotIn('за вчера',result)
         self.assertIn('7. OSA 11:00 82,1%',result)
         self.assertIn('8. OSA 20:00 46,2%',result)
+
+class CanonicalTimerParent(unittest.TestCase):
+    def test_sparse_webhook_uses_validated_rest_parent(self):
+        import io,json,datetime as dt
+        from unittest.mock import patch
+        from telegram_reports.timer import canonical_event,due_time,TZ
+        run=TimerTests().event()['workflow_run'];run['id']=123
+        with patch.dict('os.environ',{'GITHUB_REPOSITORY':'owner/repo','GH_TOKEN':'test-only'}),patch('telegram_reports.timer.urllib.request.urlopen',return_value=io.BytesIO(json.dumps(run).encode())) as request:
+            event=canonical_event(123)
+        self.assertEqual(request.call_args.args[0].full_url,'https://api.github.com/repos/owner/repo/actions/runs/123')
+        self.assertEqual(due_time(event,dt.datetime(2026,11,20,8,50,tzinfo=TZ),'owner/repo'),dt.datetime(2026,11,20,9,tzinfo=TZ))
+    def test_invalid_parent_cannot_select_another_endpoint(self):
+        from unittest.mock import patch
+        from telegram_reports.timer import canonical_event
+        with patch('telegram_reports.timer.urllib.request.urlopen') as request:
+            with self.assertRaises(ValueError):canonical_event('../foreign')
+        request.assert_not_called()
