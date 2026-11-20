@@ -52,6 +52,9 @@ class BIReports:
         # Avoid reloading the slow menu for every cloud session.
         links=[BI+'/login/accounting?'+urllib.parse.urlencode({'next':'/superset/dashboard/37/'})]
         print('BI: opening accounting session',flush=True)
+        # Authenticate over HTTP before creating Chrome's accounting session.
+        # A streamed login document can commit while its form never reaches DOM.
+        self.client.ensure_authenticated()
         context=self.browser.new_context()
         try:
             for handler in self.client.opener.handlers if self.client._authenticated else []:

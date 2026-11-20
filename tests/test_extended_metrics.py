@@ -267,3 +267,25 @@ class NativeDateAnchors(unittest.TestCase):
         from daily_metrics.io import native_cell
         with patch('daily_metrics.io.get',return_value='<html>unavailable</html>'):
             with self.assertRaises(StructureError):native_cell('book',0,'A6')
+
+
+class BIHTTPAuthentication(unittest.TestCase):
+    def test_http_login_precedes_browser_context_and_failure_stops_browser(self):
+        from unittest.mock import Mock
+        from daily_metrics.extended_io import BIReports
+        events=[]
+        client=Mock()
+        client.ensure_authenticated.side_effect=lambda: events.append('login')
+        browser=Mock()
+        def context():
+            events.append('context')
+            raise RuntimeError('stop before navigation')
+        browser.new_context.side_effect=context
+        reader=BIReports(browser,client)
+        with self.assertRaises(RuntimeError):reader.authenticate()
+        self.assertEqual(events,['login','context'])
+        client.ensure_authenticated.side_effect=StructureError('login unavailable')
+        browser.reset_mock()
+        reader=BIReports(browser,client)
+        with self.assertRaises(StructureError):reader.authenticate()
+        browser.new_context.assert_not_called()
