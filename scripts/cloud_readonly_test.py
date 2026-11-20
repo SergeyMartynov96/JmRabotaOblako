@@ -168,9 +168,13 @@ class ReadOnlySU:
             raise ValueError("Unapproved read endpoint")
         encoded = urllib.parse.urlencode(data).encode() if data is not None else None
         attempts = 3  # Only read endpoints and same-credential login passed the allowlist above.
+        # Generating a request card can exceed the former 35s during SU load.
+        # Keep retries limited and give only approved card GETs a longer wait.
+        read_timeout = 60 if data is None and re.fullmatch(
+            r"/turnover/supplyRequest/view/\d+", parsed.path) else 35
         for attempt in range(attempts):
             try:
-                with self.opener.open(SU + path, encoded, timeout=35) as response:
+                with self.opener.open(SU + path, encoded, timeout=read_timeout) as response:
                     return response.read().decode("utf-8")
             except urllib.error.HTTPError as exc:
                 if exc.code not in (429, 500, 502, 503, 504) or attempt + 1 == attempts:

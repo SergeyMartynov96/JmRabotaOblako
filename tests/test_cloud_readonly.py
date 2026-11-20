@@ -68,6 +68,36 @@ class ReadOnlyChecks(unittest.TestCase):
             client.request('/turnover/supplyRequest/report', {})
         self.assertEqual(client.opener.open.call_count, 1)
 
+    def test_slow_card_has_longer_wait_without_changing_other_reads(self):
+        from unittest.mock import Mock
+        client = module.ReadOnlySU();client.opener = Mock()
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.read.return_value = b'<html>card</html>'
+        client.opener.open.return_value = response
+        self.assertEqual(client.request('/turnover/supplyRequest/view/123'), '<html>card</html>')
+        self.assertEqual(client.opener.open.call_args.kwargs['timeout'], 60)
+        client.request('/dashboad/api/header?departmentId=115')
+        self.assertEqual(client.opener.open.call_args.kwargs['timeout'], 35)
+        client.opener.reset_mock()
+        with self.assertRaises(ValueError):client.request('/turnover/supplyRequest/view/123', {'count': 1})
+        client.opener.open.assert_not_called()
+
+    def test_card_retries_still_stop_at_three_and_do_not_repeat_access_denial(self):
+        from unittest.mock import Mock, patch
+        import urllib.error
+        client = module.ReadOnlySU();client.opener = Mock()
+        client.opener.open.side_effect = TimeoutError()
+        with patch.object(module.time,'sleep'),self.assertRaises(TimeoutError):
+            client.request('/turnover/supplyRequest/view/123')
+        self.assertEqual(client.opener.open.call_count,3)
+        self.assertTrue(all(call.kwargs['timeout']==60 for call in client.opener.open.call_args_list))
+        client.opener.reset_mock()
+        client.opener.open.side_effect=urllib.error.HTTPError('url',403,'private',{},None)
+        with self.assertRaises(urllib.error.HTTPError):client.request('/turnover/supplyRequest/view/123')
+        self.assertEqual(client.opener.open.call_count,1)
+
     def test_only_known_suppliers_match(self):
         headers = ["Дата", "Мамадалиев", "Маматулин", "Кисель"]
         self.assertEqual(module.supplier_column("ИП Маматулин Данис Маратович", headers), 2)
