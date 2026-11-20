@@ -5,6 +5,14 @@ on:
     types: [requested]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [verify, arm_morning]
+        default: verify
+      parent_run:
+        description: Existing 08:00 parent run ID; arm_morning only
+        default: ''
 permissions:
   contents: read
   actions: write
@@ -22,8 +30,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Verify dispatch without reports
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.operation != 'arm_morning'
         run: python3 -m telegram_reports.timer --verify
       - name: Wait for 09:00 from existing external morning signal
         if: github.event_name == 'workflow_run'
         run: python3 -m telegram_reports.timer
+      - name: Restore today's morning timer from verified parent
+        if: github.event_name == 'workflow_dispatch' && inputs.operation == 'arm_morning'
+        env:
+          PARENT_RUN: ${{ inputs.parent_run }}
+        run: python3 -m telegram_reports.timer --arm-morning
