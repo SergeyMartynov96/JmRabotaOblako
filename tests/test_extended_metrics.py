@@ -319,6 +319,7 @@ class NativeSelectionConfirmation(unittest.TestCase):
     def test_empty_result_formula_is_preserved(self):
         from unittest.mock import Mock,patch
         from daily_metrics.io import RevenueSheet
-        sheet=RevenueSheet.__new__(RevenueSheet);sheet.branch=Mock()
+        sheet=RevenueSheet.__new__(RevenueSheet);sheet.branch=Mock();sheet.page=Mock();sheet.select=Mock()
+        sheet.formula=Mock(return_value='=IF(TRUE,"",1)')
         with patch('daily_metrics.io.native_cell',return_value=('string',None)):
             self.assertEqual(sheet._confirm_selection('L10','=IF(TRUE,"",1)'),'=IF(TRUE,"",1)')

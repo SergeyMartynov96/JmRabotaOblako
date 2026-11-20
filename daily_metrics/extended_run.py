@@ -13,6 +13,7 @@ def fill_extra(sheet,sources,branch,day,header,row,rows,apply,summary,check_date
     errors=[]
     for metric,cells in targets.items():
         pending=[(r,c) for r,c in cells if not sheet.stable_formula(a1(r,c))]
+        print(branch.name+': '+metric+' destinations pending='+str(len(pending))+' total='+str(len(cells)),flush=True)
         summary['preserved']+=len(cells)-len(pending)
         if apply and not pending and metric!='reasons':continue
         print(branch.name+': reading '+metric,flush=True)

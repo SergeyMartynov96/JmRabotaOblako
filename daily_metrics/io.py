@@ -173,7 +173,6 @@ class RevenueSheet:
         _,raw=native_cell(self.branch.book,self.branch.revenue_gid,cell)
         native_blank=raw is None or raw==''
         if not native_blank:return formula or str(raw)
-        if formula.startswith('='):return formula
         if not formula:return formula
         # After a paste the formula bar can retain the previous cell's scalar.
         # A name-box value alone does not prove the grid finished selecting.
