@@ -1,7 +1,8 @@
 """Manual, read-only source verification. Never logs source financial values."""
 import json,shutil,argparse,urllib.parse
 from .config import BRANCHES
-from .io import SUReports,csv_sheet
+from .io import csv_sheet
+from .session import ReportSUReports as SUReports
 from .run import reporting_day
 from .extended_io import ExtraSources
 from .extended_core import extra_targets,bi_rows
@@ -121,6 +122,19 @@ def main():
                             raw=bi_rows(sources.bi.read(kind,branch,day))
                             info['reason_labels']=[r.get('reason') for r in raw]
                             info['known_reasons']=list(result)
+                            from .extended_core import percent_literal
+                            from .core import same_cell_value
+                            missing=[];mismatched=[];matched=[]
+                            for name,amount in result.items():
+                                for r,c in layout['reasons'].get(name,[]):
+                                    stored=value(rows,r,c)
+                                    if not stored:missing.append(name)
+                                    elif same_cell_value(stored,percent_literal(amount,branch.name,1)):matched.append(name)
+                                    else:mismatched.append(name)
+                            info['matched_reason_columns']=matched
+                            info['missing_reported_columns']=missing
+                            info['mismatched_reason_columns']=mismatched
+                            if missing or mismatched:failures.append(branch.name+': reasons destination mismatch')
                         else:
                             r,c=layout[kind];stored=value(rows,r,c)
                             if result is not None and stored:
