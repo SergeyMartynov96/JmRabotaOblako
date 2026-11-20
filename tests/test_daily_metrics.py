@@ -156,7 +156,7 @@ class FailedSourcePreservesDestination(unittest.TestCase):
         from daily_metrics.config import BRANCHES
         sheet=Mock();sheet.refresh.return_value=[['']*19 for _ in range(12)]
         sheet.formula.side_effect=lambda cell:DAY.strftime('%d.%m.%Y') if cell=='A2' else 'occupied'
-        sheet.cell_has_content.side_effect=lambda cell:cell!='D2'
+        sheet.cell_has_content.side_effect=lambda cell:cell not in ('D2','L10')
         sheet.is_reporting_date.return_value=True
         client=Mock();client.writeoff.side_effect=TimeoutError()
         summary={'written':0,'preserved':0,'missing':0,'planned':0}

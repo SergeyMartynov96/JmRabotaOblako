@@ -62,6 +62,7 @@ def fill_branch(browser,client,branch,day,apply,summary,extra_sources=None):
         }
         targets={'revenue':[(row,2),lower_revenue],'writeoff':[(row,3)],
                  'tops':[(row,6),(row,7),(row,8)]}
+        failed_sources=set()
         for metric,load in sources.items():
             # No need to query a source when all of its destinations are already filled.
             if apply and all(sheet.cell_has_content(a1(r,c)) for r,c in targets[metric]):
@@ -71,6 +72,7 @@ def fill_branch(browser,client,branch,day,apply,summary,extra_sources=None):
             except Exception as exc:
                 # A transport/auth/schema failure is a technical error, unlike an empty valid report.
                 errors.append(metric+' source failed ('+type(exc).__name__+')')
+                failed_sources.add(metric)
                 continue  # A technical failure must not become a permanent missing-data dash.
             result=metrics[metric]
             for i,(r,c) in enumerate(targets[metric]):
@@ -86,7 +88,9 @@ def fill_branch(browser,client,branch,day,apply,summary,extra_sources=None):
                     else:summary['preserved']+=1
         # Formula E is never edited. Wait for recalculation, copy its DISPLAYED rounded value.
         r,c=lower_writeoff
-        if not sheet.cell_has_content(a1(r,c)):
+        if failed_sources & {'revenue','writeoff'}:
+            pass  # A derived percentage must also stay blank after a source failure.
+        elif not sheet.cell_has_content(a1(r,c)):
             current=sheet.refresh()
             displayed=value(current,row,4)
             try:
