@@ -181,10 +181,23 @@ class RevenueSheet:
         self.select('ZZ1' if cell.upper()!='ZZ1' else 'ZY1')
         for _ in range(5):
             actual=self.formula(cell)
-            if actual.startswith('='):return actual
+            if actual.startswith('='):return self._reload_selection(cell)
             if (native_blank and not actual) or (not native_blank and actual and (same_cell_value(actual,str(raw)) or same_cell_value(str(raw),actual))):return actual
             self.page.wait_for_timeout(300)
-        raise StructureError('Selected cell differs from native data ('+cell+')')
+        return self._reload_selection(cell)
+
+    def _reload_selection(self,cell):
+        # A stale formula can look like a legitimate empty-result formula.
+        # Reload read-only state before deciding to preserve or fill this cell.
+        self.page.reload(wait_until='domcontentloaded',timeout=60000)
+        self.page.locator('#t-name-box').wait_for(timeout=45000)
+        self.select(cell)
+        self.page.wait_for_timeout(1000)
+        first=self.formula(cell)
+        self.page.wait_for_timeout(500)
+        second=self.formula(cell)
+        if first!=second:raise StructureError('Unstable cell after reload ('+cell+')')
+        return second
 
     def cell_has_content(self,cell):
         if self.stable_formula(cell):return True

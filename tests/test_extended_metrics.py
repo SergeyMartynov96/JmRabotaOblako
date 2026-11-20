@@ -320,7 +320,7 @@ class NativeSelectionConfirmation(unittest.TestCase):
         from unittest.mock import Mock,patch
         from daily_metrics.io import RevenueSheet
         sheet=RevenueSheet.__new__(RevenueSheet);sheet.branch=Mock();sheet.page=Mock();sheet.select=Mock()
-        sheet.formula=Mock(return_value='=IF(TRUE,"",1)')
+        sheet.formula=Mock(return_value='=IF(TRUE,"",1)');sheet._reload_selection=Mock(return_value='=IF(TRUE,"",1)')
         with patch('daily_metrics.io.native_cell',return_value=('string',None)):
             self.assertEqual(sheet._confirm_selection('L10','=IF(TRUE,"",1)'),'=IF(TRUE,"",1)')
 
@@ -350,3 +350,14 @@ class NativeConcurrentEditSafety(unittest.TestCase):
         with patch('daily_metrics.io.native_cell',return_value=('number',.7)):
             self.assertFalse(sheet.replace_if_unchanged('L10','0,1','0,3'))
         sheet.page.evaluate.assert_not_called()
+
+
+class StaleFormulaRecovery(unittest.TestCase):
+    def test_old_formula_does_not_hide_a_blank_native_cell(self):
+        from unittest.mock import Mock,patch
+        from daily_metrics.io import RevenueSheet
+        sheet=RevenueSheet.__new__(RevenueSheet);sheet.branch=Mock();sheet.page=Mock();sheet.select=Mock()
+        sheet.formula=Mock(return_value='=SUM(A1:A2)');sheet._reload_selection=Mock(return_value='')
+        with patch('daily_metrics.io.native_cell',return_value=('number',None)):
+            self.assertEqual(sheet._confirm_selection('J2233','=SUM(A1:A2)'), '')
+        sheet._reload_selection.assert_called_once_with('J2233')
