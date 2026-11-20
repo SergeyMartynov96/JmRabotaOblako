@@ -323,3 +323,19 @@ class NativeSelectionConfirmation(unittest.TestCase):
         sheet.formula=Mock(return_value='=IF(TRUE,"",1)')
         with patch('daily_metrics.io.native_cell',return_value=('string',None)):
             self.assertEqual(sheet._confirm_selection('L10','=IF(TRUE,"",1)'),'=IF(TRUE,"",1)')
+
+
+class PersistedWriteConfirmation(unittest.TestCase):
+    def test_local_echo_waits_for_server_and_accepts_percent_roundoff(self):
+        from unittest.mock import Mock,patch
+        from daily_metrics.io import RevenueSheet
+        sheet=RevenueSheet.__new__(RevenueSheet);sheet.branch=Mock();sheet.page=Mock()
+        with patch('daily_metrics.io.native_cell',side_effect=[('number',None),('number',.04800000000000001)]) as read:
+            sheet._wait_persisted('L10','4,8%')
+        self.assertEqual(read.call_count,2)
+    def test_unsaved_echo_cannot_be_reported_as_written(self):
+        from unittest.mock import Mock,patch
+        from daily_metrics.io import RevenueSheet
+        sheet=RevenueSheet.__new__(RevenueSheet);sheet.branch=Mock();sheet.page=Mock()
+        with patch('daily_metrics.io.native_cell',return_value=('number',None)):
+            with self.assertRaisesRegex(StructureError,'not persisted'):sheet._wait_persisted('L10','4,8')

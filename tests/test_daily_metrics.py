@@ -111,7 +111,7 @@ class PercentEntryRegression(unittest.TestCase):
         sheet=object.__new__(RevenueSheet)
         sheet.allowed={'L18'};sheet.anchors={}
         sheet.stable_formula=Mock(return_value='');sheet.formula=Mock(return_value='4,80%')
-        sheet.select=Mock();sheet.page=Mock()
+        sheet.select=Mock();sheet.page=Mock();sheet._wait_persisted=Mock()
         self.assertTrue(sheet.put_blank('L18','4,8%'))
         sheet.page.keyboard.type.assert_not_called()
         sheet.page.evaluate.assert_called_once_with('(text) => navigator.clipboard.writeText(text)','4,8%')

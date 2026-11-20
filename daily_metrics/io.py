@@ -149,6 +149,7 @@ class RevenueSheet:
     def refresh(self):
         return csv_sheet(self.branch.book,self.branch.revenue_gid)
     def select(self,cell):
+        self.page.bring_to_front()
         box=self.page.locator('#t-name-box');box.fill(cell);box.press('Enter')
         self.page.wait_for_timeout(300)
         if box.input_value().upper()!=cell.upper():raise StructureError('Cell selection mismatch')
@@ -229,9 +230,31 @@ class RevenueSheet:
         for _ in range(8):
             self.page.wait_for_timeout(500)
             actual=self.formula(cell)
-            if same_cell_value(actual,result):return True
+            if same_cell_value(actual,result):
+                self._wait_persisted(cell,result)
+                return True
         raise StructureError('Revenue write not verified')
 
+
+    def _wait_persisted(self,cell,result):
+        # A formula-bar echo is not a server acknowledgement. Wait before moving
+        # selection so the next cell cannot inherit an in-flight paste/editor.
+        from decimal import Decimal
+        from .core import number
+        for _ in range(8):
+            _,raw=native_cell(self.branch.book,self.branch.revenue_gid,cell)
+            matched=raw is not None and same_cell_value(str(raw),result)
+            if raw is not None and not matched:
+                try:
+                    expected=number(result)/(100 if str(result).endswith('%') else 1)
+                    matched=abs(number(str(raw))-expected)<=Decimal('0.0000000001')
+                except StructureError:pass
+            if matched:
+                self.page.keyboard.press('Escape')
+                self.page.wait_for_timeout(1000)
+                return
+            self.page.wait_for_timeout(750)
+        raise StructureError('Written cell not persisted ('+cell+')')
 
     def replace_if_unchanged(self,cell,expected,result):
         """Only the approved defect+damage correction may replace a verified old scalar."""
@@ -244,5 +267,7 @@ class RevenueSheet:
         self.page.keyboard.press('Control+V');self.page.wait_for_timeout(250);self.page.keyboard.press('Enter')
         for _ in range(8):
             self.page.wait_for_timeout(500)
-            if same_cell_value(self.formula(cell),result):return True
+            if same_cell_value(self.formula(cell),result):
+                self._wait_persisted(cell,result)
+                return True
         raise StructureError('Combined damage write not verified')
