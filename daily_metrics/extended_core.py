@@ -136,6 +136,11 @@ def bi_reasons(payload,metric):
     for row in bi_rows(payload):
         if 'reason' not in row or metric not in row:raise StructureError('BI reason columns missing')
         raw=key(row['reason']);name=reason_key(row['reason'])
+        # No training column exists in the owner's current sheet layout.
+        # Do not assign it to an unrelated reason or block the mapped reasons.
+        if name is None and raw==key('Обучение'):
+            print('BI: training reason has no destination column; left unassigned',flush=True)
+            continue
         if name is None:raise StructureError('Unmapped BI reason')
         if raw in seen:raise StructureError('BI reason duplicated')
         seen.add(raw)
