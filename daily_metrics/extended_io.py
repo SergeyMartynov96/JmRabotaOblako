@@ -70,10 +70,17 @@ class BIReports:
                 if not self.client._authenticated:self._browser_login(page)
                 context.route('**/*',session_documents)
                 started=time.monotonic()
+                page.bring_to_front()
                 response=page.goto(links[0],wait_until='commit',timeout=180000)
+                if response is None or response.status!=200:
+                    raise StructureError('BI authentication HTTP '+str(response.status if response else 0))
+                # Accounting can commit its HTML before redirecting into Superset.
+                # Keep this first page active through the final document load.
+                remaining=max(1,int(180000-(time.monotonic()-started)*1000))
+                page.wait_for_url(BI+'/superset/**',wait_until='domcontentloaded',timeout=remaining)
                 location=urllib.parse.urlsplit(page.url)
-                if response is None or response.status!=200 or location.hostname!='bi.lifemart.ru' or not location.path.startswith('/superset/'):
-                    raise StructureError('BI authentication failed')
+                if location.hostname!='bi.lifemart.ru' or not location.path.startswith('/superset/'):
+                    raise StructureError('BI authentication location failed')
                 remaining=max(1,int(180000-(time.monotonic()-started)*1000))
                 token=page.wait_for_function("""() => {
                     const input=document.querySelector('input[name="csrf_token"]');
