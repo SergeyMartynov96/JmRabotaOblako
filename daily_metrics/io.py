@@ -262,6 +262,10 @@ class RevenueSheet:
         self.check_anchors()
         actual=self.stable_formula(cell)
         if actual.startswith('=') or not same_cell_value(actual,expected):return False
+        # Also protect concurrent/manual edits when a stale formula bar happens
+        # to echo the old correction value.
+        _,raw=native_cell(self.branch.book,self.branch.revenue_gid,cell)
+        if raw is None or not same_cell_value(str(raw),expected):return False
         self.select(cell)
         self.page.evaluate('(text) => navigator.clipboard.writeText(text)',result)
         self.page.keyboard.press('Control+V');self.page.wait_for_timeout(250);self.page.keyboard.press('Enter')

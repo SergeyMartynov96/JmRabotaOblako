@@ -339,3 +339,14 @@ class PersistedWriteConfirmation(unittest.TestCase):
         sheet=RevenueSheet.__new__(RevenueSheet);sheet.branch=Mock();sheet.page=Mock()
         with patch('daily_metrics.io.native_cell',return_value=('number',None)):
             with self.assertRaisesRegex(StructureError,'not persisted'):sheet._wait_persisted('L10','4,8')
+
+
+class NativeConcurrentEditSafety(unittest.TestCase):
+    def test_stale_old_formula_cannot_replace_a_new_manual_scalar(self):
+        from unittest.mock import Mock,patch
+        from daily_metrics.io import RevenueSheet
+        sheet=RevenueSheet.__new__(RevenueSheet);sheet.branch=Mock();sheet.page=Mock()
+        sheet.allowed={'L10'};sheet.check_anchors=Mock();sheet.stable_formula=Mock(return_value='0,1')
+        with patch('daily_metrics.io.native_cell',return_value=('number',.7)):
+            self.assertFalse(sheet.replace_if_unchanged('L10','0,1','0,3'))
+        sheet.page.evaluate.assert_not_called()
