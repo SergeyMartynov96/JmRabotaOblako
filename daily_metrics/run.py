@@ -70,7 +70,7 @@ def fill_branch(browser,client,branch,day,apply,summary,extra_sources=None):
             except Exception as exc:
                 # A transport/auth/schema failure is a technical error, unlike an empty valid report.
                 errors.append(metric+' source failed ('+type(exc).__name__+')')
-                metrics[metric]=[DASH]*3 if metric=='tops' else DASH
+                continue  # A technical failure must not become a permanent missing-data dash.
             result=metrics[metric]
             for i,(r,c) in enumerate(targets[metric]):
                 literal=result[i] if metric=='tops' else result

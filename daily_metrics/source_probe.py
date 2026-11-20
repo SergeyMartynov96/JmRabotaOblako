@@ -68,12 +68,31 @@ def verify_invoices(browser,client,branches,day):
 def main():
     from playwright.sync_api import sync_playwright
     parser=argparse.ArgumentParser()
-    parser.add_argument('--source',choices=('bi','invoices'),default='bi')
+    parser.add_argument('--source',choices=('bi','invoices','cells'),default='bi')
     parser.add_argument('--branch',choices=['all']+[b.name for b in BRANCHES],default='all')
     args=parser.parse_args();branches=[b for b in BRANCHES if args.branch in ('all',b.name)]
     day=reporting_day();client=SUReports();failures=[];verified=0
     with sync_playwright() as pw:
         browser=pw.chromium.launch(headless=True,executable_path=shutil.which('google-chrome'))
+        if args.source=='cells':
+            from .io import RevenueSheet,native_cell
+            from .core import a1
+            try:
+                for branch in branches:
+                    sheet=RevenueSheet(browser,branch,day)
+                    try:
+                        rows=sheet.refresh();row,header=target_candidates(rows,day,branch.newest_first)[0]
+                        layout=extra_targets(rows,header,row,day)
+                        cells=[(row,2),(row,3)]+[loc[0] for loc in layout['reasons'].values()]
+                        for r,c in cells:
+                            cell=a1(r,c);formula=sheet.stable_formula(cell)
+                            _,raw=native_cell(branch.book,branch.revenue_gid,cell)
+                            print(json.dumps({'branch':branch.name,'cell':cell,'formula_present':bool(formula),
+                                'native_present':raw is not None and raw!='','formula_length':len(formula),
+                                'formula_is_date':bool(__import__('re').fullmatch(r'\d{1,2}\.\d{1,2}\.\d{4}',formula))}),flush=True)
+                    finally:sheet.page.close()
+            finally:browser.close()
+            return
         if args.source=='invoices':
             try:verify_invoices(browser,client,branches,day)
             finally:browser.close()
