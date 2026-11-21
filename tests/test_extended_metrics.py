@@ -440,3 +440,34 @@ class FullManualWriteoffReason(unittest.TestCase):
             {'reason':'Срок годности. Закуп','Списания %':.02}]}]}
         self.assertEqual(reason_key('СГ ручное'),'sg_manual')
         self.assertEqual(bi_reasons(payload,'Списания %'),{'sg_manual':Decimal('.100'),'sg_purchase':Decimal('2.00')})
+
+class ZeroReasonTransfer(unittest.TestCase):
+    def test_skip_rounded_zero_only_for_reasons_all_stores(self):
+        from unittest.mock import Mock,patch
+        from daily_metrics.extended_run import fill_extra
+        for store in ('АВ12','М42','Г34'):
+            with self.subTest(store=store):
+                layout={'uv':(0,0),'osa':(0,1),'invoices':(0,2),
+                    'reasons':{'sg_manual':[(1,0)],'sg_post':[(1,1)],'workshop':[(1,2)]},'date_anchors':[]}
+                sheet=Mock();sheet.allowed=set();sheet.anchors={};sheet.stable_formula.return_value=''
+                sheet.put_blank.return_value=True
+                sources=Mock();sources.read.side_effect=lambda metric,*_: {'sg_manual':0,'sg_post':.04,'workshop':.1} if metric=='reasons' else 0
+                summary={'written':0,'preserved':0,'missing':0,'planned':0};branch=Mock();branch.name=store
+                with patch('daily_metrics.extended_run.extra_targets',return_value=layout):
+                    self.assertEqual(fill_extra(sheet,sources,branch,dt.date(2026,11,20),0,0,[],True,summary,lambda _:None),[])
+                self.assertEqual({call.args[0] for call in sheet.put_blank.call_args_list},{'A1','B1','C1','C2'})
+                self.assertEqual(summary['written'],4)
+
+class InitialBIResources(unittest.TestCase):
+    def test_first_load_allows_scripts_bootstrap_and_styles(self):
+        from unittest.mock import Mock
+        from daily_metrics.extended_io import BIReports,BI
+        browser=Mock();client=Mock();client._authenticated=True;client.opener.handlers=[]
+        context=browser.new_context.return_value;page=context.new_page.return_value
+        page.url=BI+'/superset/dashboard/37/';page.goto.return_value.status=200
+        BIReports(browser,client).authenticate()
+        handler=context.route.call_args.args[1]
+        for kind in ('document','script','stylesheet','xhr','fetch'):
+            route=Mock();route.request.resource_type=kind;handler(route)
+            route.continue_.assert_called_once();route.abort.assert_not_called()
+        route=Mock();route.request.resource_type='image';handler(route);route.abort.assert_called_once()

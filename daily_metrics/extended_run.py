@@ -1,6 +1,6 @@
 """Blank-only transfer of yesterday's BI and invoice metrics."""
 from .core import DASH,StructureError,a1,money,same_cell_value
-from .extended_core import extra_targets,percent_literal
+from .extended_core import extra_targets,percent_literal,reason_literal
 
 
 def fill_extra(sheet,sources,branch,day,header,row,rows,apply,summary,check_date):
@@ -21,8 +21,10 @@ def fill_extra(sheet,sources,branch,day,header,row,rows,apply,summary,check_date
             result=sources.read(metric,branch,day)
             if metric=='reasons':
                 # Missing categories never create zeros, dashes or replacement writes.
-                values={(r,c):percent_literal(result[name],branch.name,1)
-                        for name,locations in layout['reasons'].items() if name in result for r,c in locations}
+                values={(r,c):literal
+                        for name,locations in layout['reasons'].items() if name in result
+                        if (literal:=reason_literal(result[name],branch.name)) is not None
+                        for r,c in locations}
             else:
                 literal=DASH if result is None else (money(result) if metric=='invoices'
                     else percent_literal(result,branch.name,2 if metric=='uv' else 1))
@@ -30,7 +32,7 @@ def fill_extra(sheet,sources,branch,day,header,row,rows,apply,summary,check_date
         except Exception as exc:
             errors.append(metric+' source failed ('+type(exc).__name__+')'+(': '+str(exc) if isinstance(exc,StructureError) else ''))
             continue
-        if metric=='reasons' and getattr(result,'has_defect',False) and result.damage_base is not None:
+        if metric=='reasons' and reason_literal(result.get('damage',0),branch.name) is not None and getattr(result,'has_defect',False) and result.damage_base is not None:
             # Owner explicitly requested damage + defects. Correct only a verified
             # standalone damage scalar, preserving formulas and unrelated manual edits.
             old=percent_literal(result.damage_base,branch.name,1)

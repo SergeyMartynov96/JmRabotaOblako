@@ -123,10 +123,12 @@ def main():
                             raw=bi_rows(sources.bi.read(kind,branch,day))
                             info['reason_labels']=[r.get('reason') for r in raw]
                             info['known_reasons']=list(result)
-                            from .extended_core import percent_literal
+                            from .extended_core import percent_literal,reason_literal
                             from .core import same_cell_value
                             missing=[];mismatched=[];matched=[]
+                            info['zero_reasons_skipped']=[name for name,amount in result.items() if reason_literal(amount,branch.name) is None]
                             for name,amount in result.items():
+                                if reason_literal(amount,branch.name) is None:continue
                                 for r,c in layout['reasons'].get(name,[]):
                                     stored=value(rows,r,c)
                                     if not stored:missing.append(name)

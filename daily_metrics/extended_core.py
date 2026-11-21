@@ -38,6 +38,12 @@ def percent_literal(points,branch_name,places=None):
     return raw+'%' if branch_name=='М42' else raw
 
 
+def reason_literal(points,branch_name):
+    """Skip causes that display as zero; retain the parser's original data."""
+    literal=percent_literal(points,branch_name,1)
+    return literal if Decimal(literal.rstrip("%").replace(",",".")) else None
+
+
 def extra_targets(rows,header,day_row,day):
     fields={}
     for name,match in (
