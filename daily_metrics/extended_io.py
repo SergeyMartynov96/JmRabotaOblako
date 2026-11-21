@@ -136,14 +136,31 @@ class BIReports:
         if not (path.startswith('/api/v1/dashboard/') or path.startswith('/api/v1/chart/')
                 or path=='/api/v1/security/csrf_token/'):
             raise StructureError('Unapproved BI read endpoint')
-        if data is None:
-            response=self.context.request.get(BI+path,timeout=180000)
-        else:
+        token=None
+        if data is not None:
             if path!='/api/v1/chart/data':raise StructureError('Only BI query POST allowed')
             token=self.csrf or self.api('/api/v1/security/csrf_token/').get('result')
             if not token:raise StructureError('BI read token unavailable')
-            response=self.context.request.post(BI+path,data=data,
-                headers={'X-CSRFToken':token,'Referer':BI+'/'},timeout=180000)
+        deadline=time.monotonic()+180
+        for attempt in range(2):
+            timeout=180000 if attempt==0 else max(1,int((deadline-time.monotonic())*1000))
+            try:
+                if data is None:response=self.context.request.get(BI+path,timeout=timeout)
+                else:response=self.context.request.post(BI+path,data=data,
+                    headers={'X-CSRFToken':token,'Referer':BI+'/'},timeout=timeout)
+            except Exception as exc:
+                if not type(exc).__module__.startswith('playwright.') or type(exc).__name__ not in ('Error','TimeoutError','TargetClosedError'):
+                    raise
+                if attempt==1 or time.monotonic()>=deadline:
+                    raise ConnectionError('BI transport unavailable') from None
+                print('BI: retrying a transient read failure within the three-minute limit',flush=True)
+                continue
+            if response.status in (429,500,502,503,504):
+                if attempt==1 or time.monotonic()>=deadline:
+                    raise ConnectionError('BI temporarily unavailable HTTP '+str(response.status))
+                print('BI: retrying a transient server response within the three-minute limit',flush=True)
+                continue
+            break
         try:payload=response.json()
         except Exception:
             raise StructureError('BI non-JSON response HTTP '+str(response.status)+' at '+path) from None

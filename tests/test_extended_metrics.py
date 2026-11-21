@@ -384,3 +384,38 @@ class InitialBIPageReadiness(unittest.TestCase):
         self.assertEqual(events,['active','commit','ready','csrf'])
         page.wait_for_url.assert_called_once_with(BI+'/superset/**',wait_until='domcontentloaded',timeout=ANY)
         self.assertIs(reader.context,browser.new_context.return_value)
+
+class BITransportRetry(unittest.TestCase):
+    def reader(self):
+        from unittest.mock import Mock
+        from daily_metrics.extended_io import BIReports
+        reader=BIReports(Mock(),Mock());reader.authenticate=Mock();reader.context=Mock();reader.csrf='test-csrf'
+        return reader
+    def test_transport_failure_retries_identical_read_inside_same_budget(self):
+        from unittest.mock import Mock,patch
+        Error=type('Error',(Exception,),{'__module__':'playwright._impl._errors'})
+        reader=self.reader();response=Mock(status=200);response.json.return_value={'result':[]}
+        reader.context.request.post.side_effect=[Error('private transport detail'),response]
+        with patch('daily_metrics.extended_io.time.monotonic',side_effect=[0,1,2]):
+            self.assertEqual(reader.api('/api/v1/chart/data',{'queries':[]}),{'result':[]})
+        calls=reader.context.request.post.call_args_list
+        self.assertEqual(len(calls),2)
+        self.assertEqual(calls[0].kwargs['data'],calls[1].kwargs['data'])
+        self.assertEqual(calls[1].kwargs['timeout'],178000)
+    def test_exhausted_budget_does_not_start_another_request(self):
+        from unittest.mock import patch
+        Error=type('Error',(Exception,),{'__module__':'playwright._impl._errors'})
+        reader=self.reader();reader.context.request.post.side_effect=Error('private')
+        with patch('daily_metrics.extended_io.time.monotonic',side_effect=[0,181]):
+            with self.assertRaisesRegex(ConnectionError,'BI transport unavailable'):reader.api('/api/v1/chart/data',{})
+        self.assertEqual(reader.context.request.post.call_count,1)
+    def test_transient_html_server_error_can_retry_but_access_denial_cannot(self):
+        from unittest.mock import Mock
+        reader=self.reader();temporary=Mock(status=503);valid=Mock(status=200);valid.json.return_value={'result':[]}
+        reader.context.request.post.side_effect=[temporary,valid]
+        self.assertEqual(reader.api('/api/v1/chart/data',{}),{'result':[]})
+        temporary.json.assert_not_called()
+        reader=self.reader();denied=Mock(status=403);denied.json.return_value={'errors':[{'error_type':'FORBIDDEN'}]}
+        reader.context.request.post.return_value=denied
+        with self.assertRaises(StructureError):reader.api('/api/v1/chart/data',{})
+        self.assertEqual(reader.context.request.post.call_count,1)

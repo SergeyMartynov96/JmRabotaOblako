@@ -1,5 +1,5 @@
 """Blank-only transfer of yesterday's BI and invoice metrics."""
-from .core import DASH,a1,money,same_cell_value
+from .core import DASH,StructureError,a1,money,same_cell_value
 from .extended_core import extra_targets,percent_literal
 
 
@@ -28,7 +28,7 @@ def fill_extra(sheet,sources,branch,day,header,row,rows,apply,summary,check_date
                     else percent_literal(result,branch.name,2 if metric=='uv' else 1))
                 values={cells[0]:literal}
         except Exception as exc:
-            errors.append(metric+' source failed ('+type(exc).__name__+')')
+            errors.append(metric+' source failed ('+type(exc).__name__+')'+(': '+str(exc) if isinstance(exc,StructureError) else ''))
             continue
         if metric=='reasons' and getattr(result,'has_defect',False) and result.damage_base is not None:
             # Owner explicitly requested damage + defects. Correct only a verified

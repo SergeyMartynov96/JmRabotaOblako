@@ -69,7 +69,7 @@ def verify_invoices(browser,client,branches,day):
 def main():
     from playwright.sync_api import sync_playwright
     parser=argparse.ArgumentParser()
-    parser.add_argument('--source',choices=('bi','invoices','cells'),default='bi')
+    parser.add_argument('--source',choices=('bi','invoices','cells','reasons'),default='bi')
     parser.add_argument('--branch',choices=['all']+[b.name for b in BRANCHES],default='all')
     args=parser.parse_args();branches=[b for b in BRANCHES if args.branch in ('all',b.name)]
     day=reporting_day();client=SUReports();failures=[];verified=0
@@ -101,7 +101,8 @@ def main():
         sources=ExtraSources(browser,client)
         try:
             sources.bi.authenticate()
-            for kind in ('uv','osa','reasons'):
+            kinds=('reasons',) if args.source=='reasons' else ('uv','osa','reasons')
+            for kind in kinds:
                 print(json.dumps({'stage':'inspect','source':kind}),flush=True)
                 try:
                     form,context=sources.bi.template(kind)
@@ -113,7 +114,7 @@ def main():
                 rows=csv_sheet(branch.book,branch.revenue_gid)
                 row,header=target_candidates(rows,day,branch.newest_first)[0]
                 layout=extra_targets(rows,header,row,day)
-                for kind in ('uv','osa','reasons'):
+                for kind in kinds:
                     print(json.dumps({'stage':'read','branch':branch.name,'source':kind}),flush=True)
                     try:
                         result=sources.read(kind,branch,day)
