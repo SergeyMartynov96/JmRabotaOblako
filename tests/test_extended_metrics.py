@@ -421,11 +421,22 @@ class BITransportRetry(unittest.TestCase):
         self.assertEqual(reader.context.request.post.call_count,1)
 
 
-class BIReadDeadlineBoundary(BITransportRetry):
+class BIReadDeadlineBoundary(unittest.TestCase):
     def test_deadline_expiring_between_retries_stops_before_network(self):
         from unittest.mock import patch
         Error=type('Error',(Exception,),{'__module__':'playwright._impl._errors'})
-        reader=self.reader();reader.context.request.post.side_effect=Error('private')
+        reader=BITransportRetry().reader();reader.context.request.post.side_effect=Error('private')
         with patch('daily_metrics.extended_io.time.monotonic',side_effect=[0,179,181]):
             with self.assertRaisesRegex(ConnectionError,'deadline exhausted'):reader.api('/api/v1/chart/data',{})
         self.assertEqual(reader.context.request.post.call_count,1)
+
+
+class FullManualWriteoffReason(unittest.TestCase):
+    def test_full_bi_label_maps_to_existing_manual_column_alongside_other_reasons(self):
+        from decimal import Decimal
+        from daily_metrics.extended_core import bi_reasons
+        payload={'result':[{'status':'success','data':[
+            {'reason':'Срок годности. Ручное редактирование','Списания %':.001},
+            {'reason':'Срок годности. Закуп','Списания %':.02}]}]}
+        self.assertEqual(reason_key('СГ ручное'),'sg_manual')
+        self.assertEqual(bi_reasons(payload,'Списания %'),{'sg_manual':Decimal('.100'),'sg_purchase':Decimal('2.00')})
