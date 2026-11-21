@@ -9,6 +9,7 @@ class ReportSUReports(SUReports):
     def request(self,path,data=None):
         if path!='/site/login':return super().request(path,data)
         if self.login_deadline is None:self.login_deadline=time.monotonic()+140
+        print('SU: login stage '+('form' if data is None else 'submission'),flush=True)
         encoded=urllib.parse.urlencode(data,doseq=True).encode() if data is not None else None
         for attempt in range(3):
             remaining=self.login_deadline-time.monotonic()
@@ -18,7 +19,9 @@ class ReportSUReports(SUReports):
                     chunks=[]
                     while time.monotonic()<self.login_deadline:
                         chunk=response.read1(65536)
-                        if not chunk:return b''.join(chunks).decode()
+                        if not chunk:
+                            print('SU: login response complete',flush=True)
+                            return b''.join(chunks).decode()
                         chunks.append(chunk)
                     raise StructureError('SU authentication exceeded its three-minute window')
             except urllib.error.HTTPError as exc:

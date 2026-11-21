@@ -176,5 +176,7 @@ def main():
 if __name__=='__main__':
     try:main()
     except Exception as exc:
+        if os.getenv('REPORT_STATUS_FILE'):
+            Path(os.environ['REPORT_STATUS_FILE']).write_text(json.dumps({'retryable':type(exc).__name__ in ('TimeoutError','ConnectionError','URLError')}))
         print(json.dumps({'report_failed':True,'error':safe_error(exc)}),flush=True)
         raise SystemExit(1) from None

@@ -44,7 +44,7 @@ jobs:
         env:
           OPERATION: ${{ inputs.operation || 'deliver' }}
           BRANCH: ${{ inputs.branch || 'all' }}
-        run: xvfb-run -a python3 -m telegram_reports.run --operation "$OPERATION" --branch "$BRANCH"
+        run: xvfb-run -a python3 -m telegram_reports.retry --operation "$OPERATION" --branch "$BRANCH"
       - name: Encrypted private review
         if: always() && inputs.review_public_key != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
