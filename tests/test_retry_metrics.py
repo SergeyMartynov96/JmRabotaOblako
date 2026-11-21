@@ -39,3 +39,10 @@ class FreshSessionRetry(unittest.TestCase):
         with patch.object(retry,'reporting_day',side_effect=[DAY,DAY,DAY+dt.timedelta(days=1)]),patch.object(retry.subprocess,'run',side_effect=child) as run:
             self.assertEqual(retry.run_with_retry('apply','all'),1)
         self.assertEqual(run.call_count,1)
+
+    def test_future_procurement_transport_failure_can_retry(self):
+        result,calls=self.execute(['Г34: procurement source 2030-01-03 failed (URLError)'])
+        self.assertEqual(result,0);self.assertEqual(len(calls),2)
+    def test_mixed_schema_and_network_errors_do_not_retry(self):
+        result,calls=self.execute(['АВ12: revenue source failed (TimeoutError)','АВ12: reasons source failed (StructureError)'])
+        self.assertEqual(result,1);self.assertEqual(len(calls),1)

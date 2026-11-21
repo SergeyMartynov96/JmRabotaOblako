@@ -419,3 +419,13 @@ class BITransportRetry(unittest.TestCase):
         reader.context.request.post.return_value=denied
         with self.assertRaises(StructureError):reader.api('/api/v1/chart/data',{})
         self.assertEqual(reader.context.request.post.call_count,1)
+
+
+class BIReadDeadlineBoundary(BITransportRetry):
+    def test_deadline_expiring_between_retries_stops_before_network(self):
+        from unittest.mock import patch
+        Error=type('Error',(Exception,),{'__module__':'playwright._impl._errors'})
+        reader=self.reader();reader.context.request.post.side_effect=Error('private')
+        with patch('daily_metrics.extended_io.time.monotonic',side_effect=[0,179,181]):
+            with self.assertRaisesRegex(ConnectionError,'deadline exhausted'):reader.api('/api/v1/chart/data',{})
+        self.assertEqual(reader.context.request.post.call_count,1)

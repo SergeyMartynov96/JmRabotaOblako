@@ -143,7 +143,11 @@ class BIReports:
             if not token:raise StructureError('BI read token unavailable')
         deadline=time.monotonic()+180
         for attempt in range(2):
-            timeout=180000 if attempt==0 else max(1,int((deadline-time.monotonic())*1000))
+            timeout=180000
+            if attempt:
+                remaining=deadline-time.monotonic()
+                if remaining<=0:raise ConnectionError('BI transport deadline exhausted')
+                timeout=max(1,int(remaining*1000))
             try:
                 if data is None:response=self.context.request.get(BI+path,timeout=timeout)
                 else:response=self.context.request.post(BI+path,data=data,

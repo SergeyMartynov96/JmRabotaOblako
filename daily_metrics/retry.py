@@ -9,7 +9,7 @@ def network_only(summary,day):
     errors=summary.get('errors')
     return (summary.get('date')==day.isoformat() and isinstance(errors,list) and bool(errors)
             and all(isinstance(error,str) and re.search(
-                r'source failed \((TimeoutError|URLError|ConnectionError)\)$',error) for error in errors))
+                r'source(?: \d{4}-\d{2}-\d{2})? failed \((TimeoutError|URLError|ConnectionError)\)$',error) for error in errors))
 
 
 def run_with_retry(operation,branch):
