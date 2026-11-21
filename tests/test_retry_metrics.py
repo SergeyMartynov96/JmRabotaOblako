@@ -46,3 +46,11 @@ class FreshSessionRetry(unittest.TestCase):
     def test_mixed_schema_and_network_errors_do_not_retry(self):
         result,calls=self.execute(['АВ12: revenue source failed (TimeoutError)','АВ12: reasons source failed (StructureError)'])
         self.assertEqual(result,1);self.assertEqual(len(calls),1)
+
+    def test_expired_login_window_is_a_timeout_not_a_schema_failure(self):
+        from unittest.mock import Mock
+        from daily_metrics.session import ReportSUReports
+        client=ReportSUReports();client.login_deadline=0;client.opener=Mock()
+        with patch('daily_metrics.session.time.monotonic',return_value=1):
+            with self.assertRaises(TimeoutError):client.request('/site/login')
+        client.opener.open.assert_not_called()

@@ -13,7 +13,7 @@ class ReportSUReports(SUReports):
         encoded=urllib.parse.urlencode(data,doseq=True).encode() if data is not None else None
         for attempt in range(3):
             remaining=self.login_deadline-time.monotonic()
-            if remaining<=0:raise StructureError('SU authentication exceeded its three-minute window')
+            if remaining<=0:raise TimeoutError('SU authentication exceeded its bounded window')
             try:
                 with self.opener.open(SU+path,encoded,timeout=min(30,remaining)) as response:
                     chunks=[]
@@ -23,7 +23,7 @@ class ReportSUReports(SUReports):
                             print('SU: login response complete',flush=True)
                             return b''.join(chunks).decode()
                         chunks.append(chunk)
-                    raise StructureError('SU authentication exceeded its three-minute window')
+                    raise TimeoutError('SU authentication exceeded its bounded window')
             except urllib.error.HTTPError as exc:
                 if exc.code not in (429,500,502,503,504) or attempt==2:raise
             except (TimeoutError,urllib.error.URLError) as exc:
