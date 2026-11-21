@@ -1,5 +1,5 @@
 """Capture actual BI renderers using one already-validated, date-filtered API result."""
-import base64,html,json,urllib.parse,time
+import base64,html,json,urllib.parse,time,re
 from pathlib import Path
 from daily_metrics.extended_io import BI
 from daily_metrics.core import StructureError
@@ -82,9 +82,12 @@ def capture_chart(bi,form,payload,destination,width=900,height=430):
         if str(form.get('slice_id'))=='4412':page.locator('table').first.screenshot(path=str(destination))
         else:page.screenshot(path=str(destination))
         return {'validated_result_rendered':True}
-    except Exception:
+    except Exception as exc:
         arm_failed_cleanup(bi)
-        print(json.dumps({'renderer_failed_phase':locals().get('phase','setup'),'slice_id':form.get('slice_id')}),flush=True)
+        # Raw diagnostics are private and only included in encrypted review.
+        Path(destination).with_suffix('.error.json').write_text(json.dumps({'type':type(exc).__name__,'message':str(exc)}))
+        code=re.search(r'(?:net::)?ERR_[A-Z_]+',str(exc))
+        print(json.dumps({'renderer_failed_phase':locals().get('phase','setup'),'slice_id':form.get('slice_id'),'transport_code':code.group(0) if code else None}),flush=True)
         try:page.screenshot(path=str(Path(destination).with_suffix(".failed.png")),timeout=5000)
         except Exception:pass
         raise
