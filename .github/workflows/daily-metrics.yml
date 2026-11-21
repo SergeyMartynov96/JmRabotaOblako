@@ -57,4 +57,4 @@ jobs:
         env:
           OPERATION: ${{ inputs.operation || 'preview' }}
           BRANCH: ${{ inputs.branch || 'all' }}
-        run: python3 -m daily_metrics.run --operation "$OPERATION" --branch "$BRANCH"
+        run: python3 -m daily_metrics.retry --operation "$OPERATION" --branch "$BRANCH"

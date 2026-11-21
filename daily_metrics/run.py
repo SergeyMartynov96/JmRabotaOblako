@@ -144,6 +144,8 @@ def main():
                     summary['errors'].append(branch.name+': '+message)
         finally:extra_sources.close();browser.close()
     # Counts only; no source documents, money, credentials, or remote error bodies in logs.
+    if os.getenv('METRICS_STATUS_FILE'):
+        Path(os.environ['METRICS_STATUS_FILE']).write_text(json.dumps(summary,ensure_ascii=False))
     print(json.dumps(summary,ensure_ascii=False))
     if os.getenv('GITHUB_STEP_SUMMARY'):
         Path(os.environ['GITHUB_STEP_SUMMARY']).write_text('Daily metrics\n\n'+json.dumps(summary,ensure_ascii=False,indent=2))
