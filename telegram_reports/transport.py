@@ -116,6 +116,26 @@ def send_connection_test(client,chat_id):
         raise BotError('Telegram did not confirm the intended private recipient')
 
 
+
+def telegram_photo(data):
+    """Encode a standard RGB JPEG on the wire; retain the native PNG unchanged."""
+    import io
+    from PIL import Image
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            image.load()
+            if image.mode in ('RGBA','LA') or 'transparency' in image.info:
+                rgba=image.convert('RGBA');rgb=Image.new('RGB',image.size,'white')
+                rgb.paste(rgba,mask=rgba.getchannel('A'))
+            else:rgb=image.convert('RGB')
+            output=io.BytesIO();rgb.save(output,format='JPEG',quality=95,subsampling=0,optimize=True)
+            prepared=output.getvalue()
+    except Exception:
+        raise BotError('Report image could not be prepared',delivery_state='rejected') from None
+    if len(prepared)>10_000_000:raise BotError('Prepared report photo exceeds Telegram limit',delivery_state='rejected')
+    return prepared
+
+
 def send_album(client,chat_id,paths,caption):
     """Send one complete album, without retrying ambiguous delivery failures."""
     from pathlib import Path
@@ -128,11 +148,12 @@ def send_album(client,chat_id,paths,caption):
     for i,path in enumerate(paths):
         data=Path(path).read_bytes()
         if not data.startswith(b'\x89PNG') or len(data)>10_000_000:raise BotError('Invalid or oversized report image')
+        data=telegram_photo(data)
         name='photo'+str(i)
         item={'type':'photo','media':'attach://'+name}
         if i==0:item['caption']=caption
         media.append(item)
-        parts.append(('--'+boundary+'\r\nContent-Disposition: form-data; name="'+name+'"; filename="report.png"\r\nContent-Type: image/png\r\n\r\n').encode()+data+b'\r\n')
+        parts.append(('--'+boundary+'\r\nContent-Disposition: form-data; name="'+name+'"; filename="report.jpg"\r\nContent-Type: image/jpeg\r\n\r\n').encode()+data+b'\r\n')
     field('chat_id',str(chat_id));field('media',json.dumps(media,ensure_ascii=False))
     parts.append(('--'+boundary+'--\r\n').encode())
     request=urllib.request.Request('https://api.telegram.org/bot'+client._token+'/sendMediaGroup',data=b''.join(parts),

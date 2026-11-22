@@ -79,7 +79,8 @@ class DeliveryTests(unittest.TestCase):
         from pathlib import Path
         from telegram_reports.transport import send_album
         with tempfile.TemporaryDirectory() as directory:
-            path=Path(directory)/'one.png';path.write_bytes(b'\x89PNGdummy')
+            path=Path(directory)/'one.png'
+            __import__('PIL.Image',fromlist=['Image']).new('RGB',(16,16),'white').save(path)
             with patch('urllib.request.urlopen',side_effect=OSError('unit-key and private chat')) as call:
                 with self.assertRaises(BotError) as caught:send_album(BotClient('unit-key'),123,[path,path],'caption')
                 self.assertEqual(call.call_count,1)
@@ -436,7 +437,8 @@ class TelegramDeliveryOutcomes(unittest.TestCase):
         from pathlib import Path
         from telegram_reports.transport import send_album
         with tempfile.TemporaryDirectory() as directory:
-            photo=Path(directory)/'one.png';photo.write_bytes(b'\x89PNGdummy')
+            photo=Path(directory)/'one.png'
+            __import__('PIL.Image',fromlist=['Image']).new('RGB',(16,16),'white').save(photo)
             payload={'ok':False,'error_code':400,'description':'private diagnostic unit-key'}
             error=urllib.error.HTTPError('https://api.telegram.org/redacted',400,'bad request',{},io.BytesIO(json.dumps(payload).encode()))
             with patch('urllib.request.urlopen',side_effect=error) as request:
@@ -495,3 +497,48 @@ class TelegramRecipientSafety(unittest.TestCase):
                     self.assertEqual(send.call_count,1)
                 self.assertEqual(json.loads(Path('telegram-receipts/115.json').read_text())['status'],'unsafe')
             finally:os.chdir(previous)
+
+
+class TelegramPhotoEncoding(unittest.TestCase):
+    def test_native_png_remains_unchanged_and_jpeg_keeps_dimensions(self):
+        import io
+        from PIL import Image,PngImagePlugin
+        from telegram_reports.transport import telegram_photo
+        image=Image.new('RGB',(2357,929),'white')
+        info=PngImagePlugin.PngInfo();info.add_text('Comment','native source metadata')
+        stream=io.BytesIO();image.save(stream,format='PNG',pnginfo=info);native=stream.getvalue()
+        result=telegram_photo(native)
+        self.assertTrue(native.startswith(b'\x89PNG'))
+        with Image.open(io.BytesIO(result)) as prepared:
+            self.assertEqual(prepared.format,'JPEG');self.assertEqual(prepared.mode,'RGB')
+            self.assertEqual(prepared.size,(2357,929))
+            self.assertNotIn('Comment',prepared.info)
+        with Image.open(io.BytesIO(native)) as source:self.assertEqual(source.info['Comment'],'native source metadata')
+
+    def test_transparency_is_flattened_to_white_without_resizing(self):
+        import io
+        from PIL import Image
+        from telegram_reports.transport import telegram_photo
+        stream=io.BytesIO();Image.new('RGBA',(32,24),(255,0,0,0)).save(stream,format='PNG')
+        with Image.open(io.BytesIO(telegram_photo(stream.getvalue()))) as image:
+            self.assertEqual(image.size,(32,24));self.assertEqual(image.mode,'RGB')
+            self.assertTrue(all(channel>=250 for channel in image.getpixel((0,0))))
+
+class TelegramMultipartJPEG(unittest.TestCase):
+    def test_wire_mime_and_attachment_names_match_jpeg_bytes(self):
+        import io,json,tempfile
+        from pathlib import Path
+        from PIL import Image
+        from telegram_reports.transport import send_album
+        with tempfile.TemporaryDirectory() as directory:
+            photo=Path(directory)/'source.png';Image.new('RGB',(32,24),'white').save(photo)
+            native=photo.read_bytes()
+            payload={'ok':True,'result':[{'chat':{'id':123,'type':'private'}}]*2}
+            with patch('urllib.request.urlopen',return_value=io.BytesIO(json.dumps(payload).encode())) as request:
+                self.assertEqual(send_album(BotClient('unit-key'),123,[photo,photo],'caption'),2)
+                body=request.call_args.args[0].data
+            self.assertEqual(body.count(b'Content-Type: image/jpeg'),2)
+            self.assertEqual(body.count(b'filename="report.jpg"'),2)
+            self.assertEqual(body.count(b'\xff\xd8'),2)
+            self.assertNotIn(b'Content-Type: image/png',body)
+            self.assertEqual(photo.read_bytes(),native)
