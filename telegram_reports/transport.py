@@ -152,5 +152,5 @@ def send_album(client,chat_id,paths,caption):
     if not payload.get('ok') or len(result)!=len(paths):raise BotError('Telegram album delivery incomplete; do not automatically retry')
     for message in result:
         if message.get('chat',{}).get('id')!=chat_id or message.get('chat',{}).get('type')!='private':
-            raise BotError('Telegram album recipient mismatch')
+            raise BotError('Telegram album recipient mismatch',delivery_state='unsafe')
     return len(result)

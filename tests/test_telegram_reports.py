@@ -475,3 +475,23 @@ class TelegramDeliveryOutcomes(unittest.TestCase):
         attempted={BRANCHES[0].department}
         self.assertEqual(branches_for_delivery(list(BRANCHES),attempted),list(BRANCHES[1:]))
         self.assertEqual(branches_for_delivery(list(BRANCHES),attempted,BRANCHES[0].name),list(BRANCHES))
+
+
+class TelegramRecipientSafety(unittest.TestCase):
+    def test_recipient_mismatch_stops_remaining_albums(self):
+        import datetime as dt,os,tempfile,json
+        from pathlib import Path
+        from unittest.mock import Mock
+        from daily_metrics.config import BRANCHES
+        from telegram_reports.run import deliver_albums
+        with tempfile.TemporaryDirectory() as directory:
+            previous=os.getcwd();os.chdir(directory)
+            try:
+                photo=Path('one.png');photo.write_bytes(b'\x89PNGdummy')
+                day=dt.date(2026,11,21)
+                collected=[(b,[photo]*8,'caption') for b in BRANCHES]
+                with patch('telegram_reports.run.reporting_day',return_value=day),patch('telegram_reports.run.send_album',side_effect=BotError('recipient mismatch',delivery_state='unsafe')) as send:
+                    with self.assertRaises(BotError):deliver_albums(collected,Mock(),123,day)
+                    self.assertEqual(send.call_count,1)
+                self.assertEqual(json.loads(Path('telegram-receipts/115.json').read_text())['status'],'unsafe')
+            finally:os.chdir(previous)

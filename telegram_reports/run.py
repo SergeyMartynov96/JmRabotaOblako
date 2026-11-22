@@ -132,6 +132,7 @@ def deliver_albums(collected,bot,recipient,day):
                 (Path(images[0]).parent/'delivery-error.json').write_text(json.dumps(exc.details))
             print(json.dumps({'branch':branch.name,'album_failed':True,'delivery_state':state,'error':str(exc)}),flush=True)
             failures.append(branch.name)
+            if state=='unsafe':raise
             continue
         receipt.write_text(json.dumps({'day':str(day),'branch':branch.name,'status':'accepted','images':accepted}))
         print(json.dumps({'branch':branch.name,'album_accepted':True,'images':accepted}),flush=True)
