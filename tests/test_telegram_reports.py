@@ -429,3 +429,49 @@ class InvoicePreflightCache(unittest.TestCase):
             fetch.assert_not_called();validate.assert_called_once()
         ctx.request.get.assert_not_called()
         ctx.new_page.return_value.locator.return_value.screenshot.assert_called_once_with(path='image.png')
+
+class TelegramDeliveryOutcomes(unittest.TestCase):
+    def test_definitive_rejection_is_distinct_from_unknown_transport_failure(self):
+        import io,json,tempfile,urllib.error
+        from pathlib import Path
+        from telegram_reports.transport import send_album
+        with tempfile.TemporaryDirectory() as directory:
+            photo=Path(directory)/'one.png';photo.write_bytes(b'\x89PNGdummy')
+            payload={'ok':False,'error_code':400,'description':'private diagnostic unit-key'}
+            error=urllib.error.HTTPError('https://api.telegram.org/redacted',400,'bad request',{},io.BytesIO(json.dumps(payload).encode()))
+            with patch('urllib.request.urlopen',side_effect=error) as request:
+                with self.assertRaises(BotError) as caught:send_album(BotClient('unit-key'),123,[photo,photo],'caption')
+                self.assertEqual(request.call_count,1)
+                self.assertEqual(caught.exception.delivery_state,'rejected')
+                self.assertEqual(caught.exception.details,payload)
+                self.assertNotIn('unit-key',str(caught.exception))
+                self.assertNotIn('private diagnostic',str(caught.exception))
+
+    def test_one_unconfirmed_branch_does_not_block_other_approved_albums(self):
+        import datetime as dt,json,os,tempfile
+        from pathlib import Path
+        from unittest.mock import Mock
+        from daily_metrics.config import BRANCHES
+        from telegram_reports.run import deliver_albums
+        for state in ('unknown','rejected'):
+            with self.subTest(state=state),tempfile.TemporaryDirectory() as directory:
+                previous=os.getcwd();os.chdir(directory)
+                try:
+                    images=[]
+                    for branch in BRANCHES[1:]:
+                        folder=Path(str(branch.department));folder.mkdir();photo=folder/'one.png';photo.write_bytes(b'\x89PNGdummy')
+                        images.append((branch,[photo]*8,'caption'))
+                    day=dt.date(2026,11,21)
+                    with patch('telegram_reports.run.reporting_day',return_value=day),patch('telegram_reports.run.send_album',side_effect=[BotError('safe failure',delivery_state=state),8]) as send:
+                        with self.assertRaises(BotError):deliver_albums(images,Mock(),123,day)
+                        self.assertEqual(send.call_count,2)
+                    self.assertEqual(json.loads(Path('telegram-receipts/153.json').read_text())['status'],state)
+                    self.assertEqual(json.loads(Path('telegram-receipts/357.json').read_text())['status'],'accepted')
+                finally:os.chdir(previous)
+
+    def test_existing_attempt_stays_protected_without_explicit_missing_branch(self):
+        from daily_metrics.config import BRANCHES
+        from telegram_reports.run import branches_for_delivery
+        attempted={BRANCHES[0].department}
+        self.assertEqual(branches_for_delivery(list(BRANCHES),attempted),list(BRANCHES[1:]))
+        self.assertEqual(branches_for_delivery(list(BRANCHES),attempted,BRANCHES[0].name),list(BRANCHES))

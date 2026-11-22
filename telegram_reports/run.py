@@ -111,6 +111,33 @@ def preflight(collected,branches):
                 image.verify()
 
 
+
+def branches_for_delivery(branches,attempted,retry_branch='none'):
+    return [branch for branch in branches if branch.department not in attempted or branch.name==retry_branch]
+
+
+def deliver_albums(collected,bot,recipient,day):
+    failures=[]
+    for branch,images,text in collected:
+        if reporting_day()!=day:raise StructureError('Report day changed before delivery')
+        receipts=Path('telegram-receipts');receipts.mkdir(exist_ok=True)
+        receipt=receipts/(str(branch.department)+'.json')
+        receipt.write_text(json.dumps({'day':str(day),'branch':branch.name,'status':'attempted'}))
+        try:
+            accepted=send_album(bot,recipient,images,text)
+        except BotError as exc:
+            state=exc.delivery_state
+            receipt.write_text(json.dumps({'day':str(day),'branch':branch.name,'status':state,'error':str(exc)}))
+            if exc.details is not None:
+                (Path(images[0]).parent/'delivery-error.json').write_text(json.dumps(exc.details))
+            print(json.dumps({'branch':branch.name,'album_failed':True,'delivery_state':state,'error':str(exc)}),flush=True)
+            failures.append(branch.name)
+            continue
+        receipt.write_text(json.dumps({'day':str(day),'branch':branch.name,'status':'accepted','images':accepted}))
+        print(json.dumps({'branch':branch.name,'album_accepted':True,'images':accepted}),flush=True)
+    if failures:raise BotError('Telegram albums not confirmed: '+', '.join(failures))
+
+
 def prior_attempts(day):
     token=os.environ['GH_TOKEN'];repo=os.environ['GITHUB_REPOSITORY'];names=set()
     for page in range(1,6):
@@ -123,7 +150,11 @@ def prior_attempts(day):
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--operation',choices=('preview','deliver','verify'),default='preview')
-    parser.add_argument('--branch',choices=['all']+[b.name for b in BRANCHES],default='all');args=parser.parse_args()
+    parser.add_argument('--branch',choices=['all']+[b.name for b in BRANCHES],default='all')
+    parser.add_argument('--retry-branch',choices=['none']+[b.name for b in BRANCHES],default='none')
+    args=parser.parse_args()
+    if args.retry_branch!='none' and (args.operation!='deliver' or os.getenv('GITHUB_EVENT_NAME')!='workflow_dispatch'):
+        raise StructureError('Delivery override requires an explicit manual dispatch')
     if os.getenv('GITHUB_ACTIONS')!='true':raise StructureError('Use GitHub Actions for report collection')
     if args.operation=='verify':
         bot=BotClient(os.environ.get('TELEGRAM_BOT_TOKEN',''));me=bot.identity()
@@ -143,7 +174,7 @@ def main():
         bot=BotClient(os.environ.get('TELEGRAM_BOT_TOKEN',''));me=bot.identity()
         recipient=decrypt_recipient(bot._token,me['id'],json.loads(BINDING.read_text()))
         attempted=prior_attempts(day)
-        branches=[b for b in branches if b.department not in attempted]
+        branches=branches_for_delivery(branches,attempted,args.retry_branch)
         if not branches:
             print('{"delivery_skipped":"prior_attempt_receipt"}',flush=True);return
     with tempfile.TemporaryDirectory() as directory:
@@ -176,15 +207,7 @@ def main():
                     raise
                 finally:bi.close();browser.close()
             preflight(collected,branches)
-            if args.operation=='deliver':
-                for branch,images,text in collected:
-                    if reporting_day()!=day:raise StructureError('Report day changed before delivery')
-                    receipts=Path('telegram-receipts');receipts.mkdir(exist_ok=True)
-                    receipt=receipts/(str(branch.department)+'.json')
-                    receipt.write_text(json.dumps({'day':str(day),'branch':branch.name,'status':'attempted'}))
-                    accepted=send_album(bot,recipient,images,text)
-                    receipt.write_text(json.dumps({'day':str(day),'branch':branch.name,'status':'accepted','images':accepted}))
-                    print(json.dumps({'branch':branch.name,'album_accepted':True,'images':accepted}),flush=True)
+            if args.operation=='deliver':deliver_albums(collected,bot,recipient,day)
             print(json.dumps({'branches_collected':len(collected),'images_per_branch':8,'operation':args.operation}),flush=True)
         finally:
             if public:

@@ -10,7 +10,7 @@ from .core import target_candidates,number,value,money
 
 
 def safe_error(exc):
-    if type(exc).__name__=='StructureError':return str(exc)
+    if type(exc).__name__ in ('StructureError','BotError'):return str(exc)
     message=str(exc).casefold()
     for marker in ('etimedout','econnreset','enotfound','socket hang up','invalid url','too many redirects','err_connection','err_name_not_resolved','err_timed_out','certificate'):
         if marker in message:return type(exc).__name__+': '+marker

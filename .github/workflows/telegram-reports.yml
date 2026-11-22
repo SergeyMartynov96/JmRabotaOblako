@@ -12,6 +12,11 @@ on:
         type: choice
         options: [all, АВ12, М42, Г34]
         default: all
+      retry_branch:
+        description: Only after a definitive rejection or user-confirmed absence
+        type: choice
+        options: [none, АВ12, М42, Г34]
+        default: none
       review_public_key:
         description: Optional base64 public key; required for preview
         type: string
@@ -44,7 +49,8 @@ jobs:
         env:
           OPERATION: ${{ inputs.operation || 'deliver' }}
           BRANCH: ${{ inputs.branch || 'all' }}
-        run: xvfb-run -a python3 -m telegram_reports.retry --operation "$OPERATION" --branch "$BRANCH"
+          RETRY_BRANCH: ${{ inputs.retry_branch || 'none' }}
+        run: xvfb-run -a python3 -m telegram_reports.retry --operation "$OPERATION" --branch "$BRANCH" --retry-branch "$RETRY_BRANCH"
       - name: Encrypted private review
         if: always() && inputs.review_public_key != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

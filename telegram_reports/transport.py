@@ -14,7 +14,16 @@ from cryptography.exceptions import InvalidTag
 
 EXPECTED_USERNAME='JmReport1_bot'
 
-class BotError(RuntimeError):pass
+class BotError(RuntimeError):
+    def __init__(self,message,*,delivery_state='unknown',details=None):
+        super().__init__(message);self.delivery_state=delivery_state;self.details=details
+
+
+def album_rejection(payload):
+    if payload.get('ok') is False and type(payload.get('error_code')) is int:
+        code=payload['error_code']
+        return BotError('Telegram album rejected (code '+str(code)+')',delivery_state='rejected',details=payload)
+    return None
 
 class BotClient:
     METHODS={'getMe','getWebhookInfo','getUpdates','sendMessage','sendMediaGroup'}
@@ -130,8 +139,15 @@ def send_album(client,chat_id,paths,caption):
         headers={'Content-Type':'multipart/form-data; boundary='+boundary})
     try:
         with urllib.request.urlopen(request,timeout=120) as response:payload=json.load(response)
+    except urllib.error.HTTPError as exc:
+        try:rejected=album_rejection(json.loads(exc.read(65536)))
+        except Exception:rejected=None
+        if rejected is not None:raise rejected from None
+        raise BotError('Telegram album delivery unconfirmed (HTTP '+str(exc.code)+'); do not automatically retry') from None
     except Exception as exc:
         raise BotError('Telegram album delivery unconfirmed ('+type(exc).__name__+'); do not automatically retry') from None
+    rejected=album_rejection(payload)
+    if rejected is not None:raise rejected
     result=payload.get('result',[])
     if not payload.get('ok') or len(result)!=len(paths):raise BotError('Telegram album delivery incomplete; do not automatically retry')
     for message in result:
