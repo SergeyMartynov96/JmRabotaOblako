@@ -1,5 +1,6 @@
 """Collect eight validated private report images for each approved branch."""
 import argparse,datetime as dt,json,os,shutil,tempfile,urllib.request
+from contextlib import contextmanager
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from playwright.sync_api import sync_playwright
@@ -64,16 +65,31 @@ def collect_bi(browser,bi,charts,branch,day,folder):
     return panels,audit,osa
 
 
+
+@contextmanager
+def assembly_stage(branch,folder,stage):
+    print(json.dumps({'branch':branch.name,'assembly_stage':stage}),flush=True)
+    try:yield
+    except Exception as exc:
+        # Only the encrypted review action can export this private diagnostic.
+        (folder/'assembly-error.json').write_text(json.dumps({'stage':stage,'type':type(exc).__name__,'message':str(exc)}))
+        print(json.dumps({'branch':branch.name,'assembly_failed_stage':stage,'error':safe_error(exc)}),flush=True)
+        raise
+
+
 def assemble(browser,bi,branch,day,folder,panels,audit,osa):
     images=[folder/f'{index:02}.png' for index in range(8)]
-    capture_week(bi.context,branch,day,images[0])
-    capture_invoices(bi.context,branch,day,images[1])
-    compose(browser,[panels['reasons']],images[2],width=700)
-    compose(browser,[panels['top_qty'],panels['top_rub']],images[3],columns=2)
-    compose(browser,[panels['ui2_days'],panels['ui2']],images[4],columns=2)
-    compose(browser,[panels['uv_dishes']],images[5])
-    compose(browser,[panels['uv_stop']],images[6])
-    compose(browser,[panels[k] for k in ('osa_all','osa_food_japan','osa_food','osa_japan')],images[7],columns=2,heading='Динамика OSA по матрице магазина')
+    with assembly_stage(branch,folder,'weekly_sheet'):
+        capture_week(bi.context,branch,day,images[0])
+    with assembly_stage(branch,folder,'invoices'):
+        capture_invoices(bi.context,branch,day,images[1])
+    with assembly_stage(branch,folder,'compose'):
+        compose(browser,[panels['reasons']],images[2],width=700)
+        compose(browser,[panels['top_qty'],panels['top_rub']],images[3],columns=2)
+        compose(browser,[panels['ui2_days'],panels['ui2']],images[4],columns=2)
+        compose(browser,[panels['uv_dishes']],images[5])
+        compose(browser,[panels['uv_stop']],images[6])
+        compose(browser,[panels[k] for k in ('osa_all','osa_food_japan','osa_food','osa_japan')],images[7],columns=2,heading='Динамика OSA по матрице магазина')
     text=caption(branch,day,osa)
     (folder/'review.json').write_text(json.dumps({'branch':branch.name,'day':str(day),'caption':text,'audit':audit},ensure_ascii=False))
     return images,text
