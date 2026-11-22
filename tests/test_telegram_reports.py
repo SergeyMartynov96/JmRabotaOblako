@@ -236,3 +236,51 @@ class CanonicalTimerParent(unittest.TestCase):
         with patch('telegram_reports.timer.urllib.request.urlopen') as request:
             with self.assertRaises(ValueError):canonical_event('../foreign')
         request.assert_not_called()
+
+
+class InvoiceTransportRetry(unittest.TestCase):
+    def setup_source(self):
+        from unittest.mock import Mock
+        from telegram_reports.invoices import invoice_source
+        context=Mock();response=Mock(status=200);response.text.return_value='validated later'
+        error=type('Error',(Exception,),{'__module__':'playwright._impl._errors'})
+        return invoice_source,context,response,error,'https://su.lifemart.ru/turnover/waybill/report?day=21'
+
+    def test_etimedout_retries_same_read_with_remaining_budget(self):
+        from unittest.mock import patch
+        source,ctx,response,error,url=self.setup_source()
+        ctx.request.get.side_effect=[error('APIRequestContext.get: read ETIMEDOUT'),response]
+        with patch('telegram_reports.invoices.time.monotonic',side_effect=[0,0,17]):
+            self.assertEqual(source(ctx,url),'validated later')
+        self.assertEqual([c.args[0] for c in ctx.request.get.call_args_list],[url,url])
+        self.assertEqual([c.kwargs['timeout'] for c in ctx.request.get.call_args_list],[180000,163000])
+
+    def test_forbidden_schema_errors_and_unapproved_paths_never_retry(self):
+        from daily_metrics.core import StructureError
+        source,ctx,response,error,url=self.setup_source()
+        ctx.request.get.return_value=response;response.status=403
+        with self.assertRaises(StructureError):source(ctx,url)
+        self.assertEqual(ctx.request.get.call_count,1)
+        ctx.request.get.reset_mock();ctx.request.get.side_effect=error('Invalid argument')
+        with self.assertRaises(error):source(ctx,url)
+        self.assertEqual(ctx.request.get.call_count,1)
+        ctx.request.get.reset_mock()
+        with self.assertRaises(StructureError):source(ctx,'https://su.lifemart.ru/turnover/waybill/update/1')
+        ctx.request.get.assert_not_called()
+
+    def test_two_transport_failures_stop_and_expired_budget_stops_before_retry(self):
+        from unittest.mock import patch
+        source,ctx,response,error,url=self.setup_source()
+        ctx.request.get.side_effect=error('read ETIMEDOUT')
+        with self.assertRaises(ConnectionError):source(ctx,url)
+        self.assertEqual(ctx.request.get.call_count,2)
+        ctx.request.get.reset_mock()
+        with patch('telegram_reports.invoices.time.monotonic',side_effect=[0,0,181]):
+            with self.assertRaises(ConnectionError):source(ctx,url)
+        self.assertEqual(ctx.request.get.call_count,1)
+
+    def test_temporary_server_responses_retry_but_stop_after_two(self):
+        source,ctx,response,error,url=self.setup_source()
+        response.status=503;ctx.request.get.return_value=response
+        with self.assertRaises(ConnectionError):source(ctx,url)
+        self.assertEqual(ctx.request.get.call_count,2)

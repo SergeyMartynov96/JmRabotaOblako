@@ -1,5 +1,5 @@
 """Validated invoice excerpt: last supplier, receiving branch, three exact totals."""
-import html,urllib.parse
+import html,urllib.parse,time
 from decimal import Decimal
 from daily_metrics.config import INVOICE_SUPPLIERS
 from daily_metrics.extended_core import invoice_total
@@ -8,13 +8,43 @@ from daily_metrics.extended_io import INVOICES
 from daily_metrics.io import SU
 
 
+
+def invoice_source(context,url):
+    """Retry only a transient, read-only invoice transport within one 180s budget."""
+    target=urllib.parse.urlsplit(url)
+    if target.scheme!='https' or target.netloc!='su.lifemart.ru' or target.path!=INVOICES:
+        raise StructureError('Unapproved invoice report read')
+    deadline=time.monotonic()+180
+    for attempt in range(2):
+        remaining=deadline-time.monotonic()
+        if remaining<=0:raise ConnectionError('Invoice report transport deadline exhausted')
+        try:
+            response=context.request.get(url,timeout=max(1,int(remaining*1000)))
+            if response.status in (429,500,502,503,504):
+                if attempt:raise ConnectionError('Invoice report temporarily unavailable')
+                print('Invoice report: retrying a temporary server response within the three-minute limit',flush=True)
+                continue
+            if response.status!=200:raise StructureError('Invoice report HTTP '+str(response.status))
+            return response.text()
+        except Exception as exc:
+            message=str(exc).casefold()
+            transport=(type(exc).__module__.startswith('playwright.') and
+                (type(exc).__name__=='TimeoutError' or
+                 (type(exc).__name__=='Error' and any(v in message for v in (
+                    'etimedout','econnreset','econnrefused','enotfound','socket hang up',
+                    'err_connection','err_timed_out','err_http2_protocol_error','connection closed','connection reset')))))
+            if not transport:raise
+            if attempt:raise ConnectionError('Invoice report transport unavailable') from None
+            print('Invoice report: retrying a transient transport failure within the three-minute limit',flush=True)
+    raise ConnectionError('Invoice report temporarily unavailable')
+
+
 def capture_invoices(context,branch,day,destination):
     params={'Waybill[insert_date_from]':day.strftime('%d.%m.%Y'),'Waybill[insert_date_to]':day.strftime('%d.%m.%Y'),
         'Waybill[recipient_id][]':[str(branch.department)],'Waybill[contractor_id][]':list(INVOICE_SUPPLIERS),
         'Waybill[itemsOnPage]':'1000','yt19':'Сформировать'}
-    response=context.request.get(SU+INVOICES+'?'+urllib.parse.urlencode(params,doseq=True),timeout=180000)
-    if response.status!=200:raise StructureError('Invoice report HTTP '+str(response.status))
-    source=response.text();invoice_total(source,branch.title,day,INVOICE_SUPPLIERS)
+    source=invoice_source(context,SU+INVOICES+'?'+urllib.parse.urlencode(params,doseq=True))
+    invoice_total(source,branch.title,day,INVOICE_SUPPLIERS)
     doc=Report();doc.feed(source)
     matches=[]
     for _,table in doc.tables:
