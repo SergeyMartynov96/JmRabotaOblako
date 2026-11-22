@@ -75,3 +75,13 @@ def bounded_bi_operation(function):
         try:return function(bi,*args,**kwargs)
         finally:timer.cancel()
     return wrapped
+
+
+def auth_snapshot(root,public_key_b64):
+    """Keep auth screenshots private; export only via the existing encryption path."""
+    def capture(page,state):
+        if not public_key_b64:return
+        folder=Path(root)/'auth';folder.mkdir(exist_ok=True)
+        (folder/'state.json').write_text(json.dumps(state))
+        page.screenshot(path=str(folder/'page.png'),timeout=5000)
+    return capture

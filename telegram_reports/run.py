@@ -17,7 +17,7 @@ from .core import weekly_period,OSA_METRICS
 from .render import capture_chart,compose,active_page
 from .sheets import capture_week
 from .invoices import capture_invoices
-from .security import seal_images,seal_tree,arm_failed_cleanup
+from .security import seal_images,seal_tree,arm_failed_cleanup,auth_snapshot
 from .transport import BotClient,BotError,decrypt_recipient,send_album
 from .connect import BINDING
 
@@ -154,6 +154,7 @@ def main():
                 client=ReportSUReports();client.ensure_authenticated()
                 bi=BIReports(browser,client);charts=ReportCharts(bi)
                 bi.seal_before_exit=lambda:seal_tree(root,public,'review.enc.json')
+                bi.auth_failure_snapshot=auth_snapshot(root,public)
                 try:
                     bi.authenticate()
                     captured=[]

@@ -100,6 +100,17 @@ class BIReports:
                 }""",timeout=remaining)
                 self.csrf=token.json_value()
 
+            except Exception:
+                try:
+                    state=page.evaluate("""() => ({path:location.pathname,ready:document.readyState,
+                        csrf:!!(document.querySelector('input[name="csrf_token"]')?.value || document.querySelector('meta[name="csrf-token"]')?.content || document.querySelector('[data-bootstrap]')),
+                        password_form:!!document.querySelector('input[type="password"]'),
+                        forms:document.forms.length})""")
+                    print(json.dumps({'bi_auth_failure_state':state}),flush=True)
+                    snapshot=getattr(self,'auth_failure_snapshot',None)
+                    if snapshot:snapshot(page,state)
+                except Exception:print('BI: authentication state unavailable',flush=True)
+                raise
             finally:
                 page.close();context.unroute('**/*',session_documents)
             self.context=context
