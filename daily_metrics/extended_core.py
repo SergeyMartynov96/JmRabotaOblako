@@ -13,7 +13,7 @@ REASON_ALIASES={
     'tasting':('дегустация','обучение'),
     'sg_rotation':('сг ротация','срок годности ротация'),
     'sg_turnover':('сг товароб','сг товарооборот','срок годности товарооборот','срок годности товароб'),
-    'sg_min_sum':('сг мин сум','срок годности мин сумма','срок годности минимальная сумма'),
+    'sg_min_sum':('сг мин сум','срок годности мин сумма','срок годности минимальная сумма','срок годности мин сумма заявки','срок годности минимальная сумма заявки'),
     'sg_manual':('сг ручное','срок годности ручное','срок годности ручное редактирование','сг ручное редактирование'),
     'sg_min_stock':('сг мин ост','срок годности мин остатки','срок годности минимальные остатки'),
     'sg_post':('сг пост','срок годности поставщик','срок годности пост'),
@@ -138,14 +138,16 @@ class ReasonValues(dict):
 
 
 def bi_reasons(payload,metric):
-    values=ReasonValues();seen=set()
+    values=ReasonValues();values.unmapped=[];seen=set()
     for row in bi_rows(payload):
         if 'reason' not in row or metric not in row:raise StructureError('BI reason columns missing')
         raw=key(row['reason']);name=reason_key(row['reason'])
-        if name is None:raise StructureError('Unmapped BI reason')
         if raw in seen:raise StructureError('BI reason duplicated')
         seen.add(raw)
         result=percentage_points(row[metric])
+        if name is None:
+            values.unmapped.append(str(row['reason']))
+            continue
         if result is None:continue
         if name=='damage':
             values[name]=values.get(name,Decimal(0))+result

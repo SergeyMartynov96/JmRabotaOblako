@@ -304,7 +304,9 @@ class TrainingReasonMapping(unittest.TestCase):
         payload['result'][0]['data'].append({'reason':'Дегустация','Списания %':.002})
         self.assertEqual(bi_reasons(payload,'Списания %')['tasting'],Decimal('.300'))
         payload['result'][0]['data'][0]['reason']='Unknown schema reason'
-        with self.assertRaises(StructureError):bi_reasons(payload,'Списания %')
+        partial=bi_reasons(payload,'Списания %')
+        self.assertEqual(partial.unmapped,['Unknown schema reason'])
+        self.assertEqual(partial['tasting'],Decimal('.200'))
 
 
 class NativeSelectionConfirmation(unittest.TestCase):
@@ -471,3 +473,44 @@ class InitialBIResources(unittest.TestCase):
             route=Mock();route.request.resource_type=kind;handler(route)
             route.continue_.assert_called_once();route.abort.assert_not_called()
         route=Mock();route.request.resource_type='image';handler(route);route.abort.assert_called_once()
+
+class UnknownReasonIsolation(unittest.TestCase):
+    def test_known_reasons_survive_unknown_label_without_guessing(self):
+        from daily_metrics.extended_core import bi_reasons
+        from decimal import Decimal
+        result=bi_reasons({'result':[{'data':[
+            {'reason':'Цеховое питание','p':.002},
+            {'reason':'Новая причина','p':.03},
+            {'reason':'Срок годности. Закуп','p':.04}]}]},'p')
+        self.assertEqual(result,{'workshop':Decimal('.200'),'sg_purchase':Decimal('4.00')})
+        self.assertEqual(result.unmapped,['Новая причина'])
+
+    def test_transfer_known_nonzero_and_keep_failure_visible(self):
+        from unittest.mock import Mock,patch
+        from daily_metrics.extended_run import fill_extra
+        from daily_metrics.extended_core import bi_reasons
+        result=bi_reasons({'result':[{'data':[
+            {'reason':'Цеховое питание','p':.002},{'reason':'Новая причина','p':.03}]}]},'p')
+        layout={'uv':(0,0),'osa':(0,1),'invoices':(0,2),
+            'reasons':{'workshop':[(1,0)],'damage':[(1,1)]},'date_anchors':[]}
+        sheet=Mock();sheet.allowed=set();sheet.anchors={}
+        sheet.stable_formula.side_effect=lambda cell:'filled' if cell in ('A1','B1','C1') else ''
+        sheet.put_blank.return_value=True
+        source=Mock();source.read.return_value=result;branch=Mock();branch.name='АВ12'
+        summary={'written':0,'preserved':0,'missing':0,'planned':0}
+        with patch('daily_metrics.extended_run.extra_targets',return_value=layout):
+            errors=fill_extra(sheet,source,branch,dt.date(2026,11,21),0,0,[],True,summary,lambda _:None)
+        sheet.put_blank.assert_called_once_with('A2','0,2')
+        self.assertEqual(errors,['reasons source failed (StructureError): Unmapped BI reason'])
+
+class MinimumOrderAmountReason(unittest.TestCase):
+    def test_full_bi_label_maps_to_existing_minimum_sum_column(self):
+        from decimal import Decimal
+        from daily_metrics.extended_core import bi_reasons
+        self.assertEqual(reason_key('Срок годности. Мин.сумма заявки'),'sg_min_sum')
+        result=bi_reasons({'result':[{'data':[
+            {'reason':'Срок годности. Мин.сумма заявки','p':.12},
+            {'reason':'Срок годности. Закуп','p':.03},
+            {'reason':'Цеховое питание','p':.002}]}]},'p')
+        self.assertEqual(result,{'sg_min_sum':Decimal('12.00'),'sg_purchase':Decimal('3.00'),'workshop':Decimal('.200')})
+        self.assertEqual(result.unmapped,[])

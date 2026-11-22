@@ -123,6 +123,8 @@ def main():
                             raw=bi_rows(sources.bi.read(kind,branch,day))
                             info['reason_labels']=[r.get('reason') for r in raw]
                             info['known_reasons']=list(result)
+                            info['unmapped_reason_labels']=getattr(result,'unmapped',[])
+                            if info['unmapped_reason_labels']:failures.append(branch.name+': unmapped reasons')
                             from .extended_core import percent_literal,reason_literal
                             from .core import same_cell_value
                             missing=[];mismatched=[];matched=[]

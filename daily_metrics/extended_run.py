@@ -20,6 +20,11 @@ def fill_extra(sheet,sources,branch,day,header,row,rows,apply,summary,check_date
         try:
             result=sources.read(metric,branch,day)
             if metric=='reasons':
+                # Keep a visible failure for unmapped labels while transferring
+                # independently validated known causes to their own columns.
+                if getattr(result,'unmapped',[]):
+                    errors.append('reasons source failed (StructureError): Unmapped BI reason')
+                    print(branch.name+': unmapped reason labels='+repr(result.unmapped),flush=True)
                 # Missing categories never create zeros, dashes or replacement writes.
                 values={(r,c):literal
                         for name,locations in layout['reasons'].items() if name in result
