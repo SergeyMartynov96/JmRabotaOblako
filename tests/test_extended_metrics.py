@@ -384,7 +384,7 @@ class InitialBIPageReadiness(unittest.TestCase):
         page.wait_for_function.side_effect=token
         reader=BIReports(browser,client);reader.authenticate()
         self.assertEqual(events,['active','commit','ready','csrf'])
-        page.wait_for_url.assert_called_once_with(BI+'/superset/**',wait_until='domcontentloaded',timeout=ANY)
+        page.wait_for_url.assert_called_once_with(BI+'/superset/**',wait_until='commit',timeout=ANY)
         self.assertIs(reader.context,browser.new_context.return_value)
 
 class BITransportRetry(unittest.TestCase):

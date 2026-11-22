@@ -238,10 +238,11 @@ class CanonicalTimerParent(unittest.TestCase):
         request.assert_not_called()
 
 
-class InvoiceTransportRetry(unittest.TestCase):
+class ReportGetTransportRetry(unittest.TestCase):
     def setup_source(self):
         from unittest.mock import Mock
-        from telegram_reports.invoices import invoice_source
+        from telegram_reports.http import report_get
+        invoice_source=lambda context,url:report_get(context,url).text()
         context=Mock();response=Mock(status=200);response.text.return_value='validated later'
         error=type('Error',(Exception,),{'__module__':'playwright._impl._errors'})
         return invoice_source,context,response,error,'https://su.lifemart.ru/turnover/waybill/report?day=21'
@@ -352,3 +353,79 @@ class SharedReportTransport(unittest.TestCase):
             with self.assertRaises(ConnectionError):
                 report_get(ctx,'https://bi.lifemart.ru/superset/explore/',timeout=20000)
         ctx.request.get.assert_called_once_with('https://bi.lifemart.ru/superset/explore/',timeout=20000)
+
+
+class InvoiceHTTPRead(unittest.TestCase):
+    def source(self):
+        from unittest.mock import Mock
+        from telegram_reports.invoices import invoice_source
+        ctx=Mock();ctx.cookies.return_value=[{'name':'session','value':'opaque-test-session','domain':'su.lifemart.ru','path':'/','secure':True,'expires':-1}]
+        return invoice_source,ctx,'https://su.lifemart.ru/turnover/waybill/report?day=21'
+
+    def test_browser_session_is_kept_in_memory_and_read_uses_get(self):
+        from unittest.mock import Mock,patch
+        source,ctx,url=self.source();opener=Mock();response=Mock()
+        response.read1.side_effect=[b'<html>report</html>',b'']
+        opener.open.return_value.__enter__=Mock(return_value=response);opener.open.return_value.__exit__=Mock(return_value=False)
+        with patch('telegram_reports.invoices.urllib.request.build_opener',return_value=opener) as factory:
+            self.assertEqual(source(ctx,url),'<html>report</html>')
+            cookies=list(factory.call_args.args[0].cookiejar)
+        self.assertEqual(cookies[0].value,'opaque-test-session');self.assertTrue(cookies[0].secure)
+        self.assertEqual(opener.open.call_args.args,(url,))
+        self.assertLessEqual(opener.open.call_args.kwargs['timeout'],60)
+
+    def test_timeout_fallback_uses_only_remaining_budget(self):
+        from unittest.mock import Mock,patch
+        source,ctx,url=self.source();opener=Mock();opener.open.side_effect=TimeoutError()
+        with patch('telegram_reports.invoices.urllib.request.build_opener',return_value=opener),patch('telegram_reports.invoices.time.monotonic',side_effect=[0,0,60]),patch('telegram_reports.invoices.report_get') as fallback:
+            fallback.return_value.text.return_value='report'
+            self.assertEqual(source(ctx,url),'report')
+            fallback.assert_called_once_with(ctx,url,timeout=120000)
+
+    def test_access_certificate_and_expired_deadline_do_not_fallback(self):
+        import ssl,urllib.error
+        from unittest.mock import Mock,patch
+        from daily_metrics.core import StructureError
+        source,ctx,url=self.source()
+        for exc,expected in ((urllib.error.HTTPError(url,403,'forbidden',{},None),StructureError),
+                            (urllib.error.URLError(ssl.SSLCertVerificationError('certificate')),urllib.error.URLError)):
+            opener=Mock();opener.open.side_effect=exc
+            with patch('telegram_reports.invoices.urllib.request.build_opener',return_value=opener),patch('telegram_reports.invoices.report_get') as fallback:
+                with self.assertRaises(expected):source(ctx,url)
+                fallback.assert_not_called()
+        opener=Mock();opener.open.side_effect=TimeoutError()
+        with patch('telegram_reports.invoices.urllib.request.build_opener',return_value=opener),patch('telegram_reports.invoices.time.monotonic',side_effect=[0,0,181]),patch('telegram_reports.invoices.report_get') as fallback:
+            with self.assertRaises(ConnectionError):source(ctx,url)
+            fallback.assert_not_called()
+
+
+class InvoicePreflightCache(unittest.TestCase):
+    def test_preflight_uses_exact_day_receiver_suppliers_without_new_page(self):
+        import datetime as dt,urllib.parse
+        from unittest.mock import Mock,patch
+        from telegram_reports.invoices import fetch_invoices
+        from daily_metrics.config import BRANCHES,INVOICE_SUPPLIERS
+        ctx=Mock();branch=BRANCHES[0];day=dt.date(2026,11,21)
+        with patch('telegram_reports.invoices.invoice_source',return_value='html') as source,patch('telegram_reports.invoices.invoice_total') as validate:
+            self.assertEqual(fetch_invoices(ctx,branch,day),'html')
+            validate.assert_called_once_with('html',branch.title,day,INVOICE_SUPPLIERS)
+            params=urllib.parse.parse_qs(urllib.parse.urlsplit(source.call_args.args[1]).query)
+        self.assertEqual(params['Waybill[insert_date_from]'],['21.11.2026'])
+        self.assertEqual(params['Waybill[insert_date_to]'],['21.11.2026'])
+        self.assertEqual(params['Waybill[recipient_id][]'],[str(branch.department)])
+        self.assertEqual(set(params['Waybill[contractor_id][]']),set(map(str,INVOICE_SUPPLIERS)))
+        ctx.new_page.assert_not_called()
+
+    def test_capture_reuses_and_revalidates_prefetched_html_without_network(self):
+        import datetime as dt
+        from unittest.mock import Mock,patch
+        from telegram_reports.invoices import capture_invoices
+        from daily_metrics.config import BRANCHES
+        branch=BRANCHES[0];ctx=Mock();day=dt.date(2026,11,21)
+        headings=['Подразделение','Подразделение получения товара','Контрагент','Сумма без НДС','Сумма НДС','Сумма с НДС']
+        source='<table><tr>'+''.join('<th>'+h+'</th>' for h in headings)+'</tr><tr><td>accounting</td><td>'+branch.title+'</td><td>Supplier</td><td>10</td><td>2</td><td>12</td></tr></table>'
+        with patch('telegram_reports.invoices.fetch_invoices') as fetch,patch('telegram_reports.invoices.invoice_total') as validate:
+            capture_invoices(ctx,branch,day,'image.png',source=source)
+            fetch.assert_not_called();validate.assert_called_once()
+        ctx.request.get.assert_not_called()
+        ctx.new_page.return_value.locator.return_value.screenshot.assert_called_once_with(path='image.png')

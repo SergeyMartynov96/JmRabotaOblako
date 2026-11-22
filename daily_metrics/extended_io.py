@@ -80,15 +80,16 @@ class BIReports:
                 if response is None or response.status!=200:
                     raise StructureError('BI authentication HTTP '+str(response.status if response else 0))
                 # Accounting can commit its HTML before redirecting into Superset.
-                # Keep this first page active through the final document load.
+                # Keep the first page active through the redirect and session token.
+                # Unrelated dashboard resources must not hold up an already valid session.
                 remaining=max(1,int(180000-(time.monotonic()-started)*1000))
                 print('BI: accounting document received; waiting for Superset',flush=True)
-                page.wait_for_url(BI+'/superset/**',wait_until='domcontentloaded',timeout=remaining)
+                page.wait_for_url(BI+'/superset/**',wait_until='commit',timeout=remaining)
                 location=urllib.parse.urlsplit(page.url)
                 if location.hostname!='bi.lifemart.ru' or not location.path.startswith('/superset/'):
                     raise StructureError('BI authentication location failed')
                 remaining=max(1,int(180000-(time.monotonic()-started)*1000))
-                print('BI: Superset document loaded; waiting for CSRF',flush=True)
+                print('BI: Superset address reached; waiting for CSRF',flush=True)
                 token=page.wait_for_function("""() => {
                     const input=document.querySelector('input[name="csrf_token"]');
                     if(input?.value) return input.value;

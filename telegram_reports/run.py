@@ -16,7 +16,7 @@ from .session import ReportSUReports,report_bi
 from .core import weekly_period,OSA_METRICS
 from .render import capture_chart,compose,active_page
 from .sheets import capture_week
-from .invoices import capture_invoices
+from .invoices import capture_invoices,fetch_invoices
 from .security import seal_images,seal_tree,arm_failed_cleanup,auth_snapshot
 from .transport import BotClient,BotError,decrypt_recipient,send_album
 from .connect import BINDING
@@ -77,12 +77,12 @@ def assembly_stage(branch,folder,stage):
         raise
 
 
-def assemble(browser,bi,branch,day,folder,panels,audit,osa):
+def assemble(browser,bi,branch,day,folder,panels,audit,osa,*,invoice_html=None):
     images=[folder/f'{index:02}.png' for index in range(8)]
     with assembly_stage(branch,folder,'weekly_sheet'):
         capture_week(bi.context,branch,day,images[0])
     with assembly_stage(branch,folder,'invoices'):
-        capture_invoices(bi.context,branch,day,images[1])
+        capture_invoices(bi.context,branch,day,images[1],source=invoice_html)
     with assembly_stage(branch,folder,'compose'):
         compose(browser,[panels['reasons']],images[2],width=700)
         compose(browser,[panels['top_qty'],panels['top_rub']],images[3],columns=2)
@@ -157,13 +157,19 @@ def main():
                 bi.auth_failure_snapshot=auth_snapshot(root,public)
                 try:
                     bi.authenticate()
+                    invoice_sources={}
+                    for branch in branches:
+                        print(json.dumps({'branch':branch.name,'stage':'invoice_preflight'}),flush=True)
+                        # HTTP reads only: do not open or switch browser pages here.
+                        invoice_sources[branch.department]=fetch_invoices(bi.context,branch,day)
+                        print(json.dumps({'branch':branch.name,'invoice_source_validated':True}),flush=True)
                     captured=[]
                     for branch in branches:
                         folder=root/str(branch.department)
                         captured.append((branch,folder,collect_bi(browser,bi,charts,branch,day,folder)))
                     # No other browser page is opened until every BI image has finished.
                     for branch,folder,source in captured:
-                        images,text=assemble(browser,bi,branch,day,folder,*source)
+                        images,text=assemble(browser,bi,branch,day,folder,*source,invoice_html=invoice_sources[branch.department])
                         collected.append((branch,images,text))
                 except Exception:
                     arm_failed_cleanup(bi)

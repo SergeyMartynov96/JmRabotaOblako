@@ -1,5 +1,5 @@
 """Validated invoice excerpt: last supplier, receiving branch, three exact totals."""
-import html,urllib.parse
+import html,urllib.parse,urllib.request,urllib.error,http.cookiejar,ssl,time
 from decimal import Decimal
 from daily_metrics.config import INVOICE_SUPPLIERS
 from daily_metrics.extended_core import invoice_total
@@ -11,14 +11,52 @@ from .http import report_get
 
 
 def invoice_source(context,url):
-    return report_get(context,url).text()
+    """Read with the browser's SU session through the proven HTTP report transport."""
+    target=urllib.parse.urlsplit(url)
+    if target.scheme!='https' or target.netloc!='su.lifemart.ru' or target.path!=INVOICES:
+        raise StructureError('Unapproved invoice report read')
+    deadline=time.monotonic()+180
+    jar=http.cookiejar.CookieJar()
+    for c in context.cookies(url):
+        expiry=c.get('expires',-1)
+        expiry=int(expiry) if expiry is not None and expiry>0 else None
+        jar.set_cookie(http.cookiejar.Cookie(0,c['name'],c['value'],None,False,
+            c['domain'],c['domain'].startswith('.'),c['domain'].startswith('.'),
+            c.get('path','/'),True,c.get('secure',False),expiry,expiry is None,
+            None,None,{},False))
+    opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    try:
+        remaining=deadline-time.monotonic()
+        if remaining<=0:raise TimeoutError('Invoice read deadline exhausted')
+        with opener.open(url,timeout=min(60,remaining)) as response:
+            chunks=[]
+            while time.monotonic()<deadline:
+                chunk=response.read1(65536)
+                if not chunk:return b''.join(chunks).decode()
+                chunks.append(chunk)
+            raise TimeoutError('Invoice read deadline exhausted')
+    except urllib.error.HTTPError as exc:
+        if exc.code not in (429,500,502,503,504):raise StructureError('Invoice report HTTP '+str(exc.code)) from None
+    except (TimeoutError,urllib.error.URLError) as exc:
+        if isinstance(getattr(exc,'reason',None),ssl.SSLCertVerificationError):raise
+    remaining=deadline-time.monotonic()
+    if remaining<=0:raise ConnectionError('Invoice report transport deadline exhausted')
+    print('Invoice report: retrying the same read through the browser-session transport',flush=True)
+    return report_get(context,url,timeout=max(1,int(remaining*1000))).text()
 
 
-def capture_invoices(context,branch,day,destination):
+def fetch_invoices(context,branch,day):
     params={'Waybill[insert_date_from]':day.strftime('%d.%m.%Y'),'Waybill[insert_date_to]':day.strftime('%d.%m.%Y'),
         'Waybill[recipient_id][]':[str(branch.department)],'Waybill[contractor_id][]':list(INVOICE_SUPPLIERS),
         'Waybill[itemsOnPage]':'1000','yt19':'Сформировать'}
     source=invoice_source(context,SU+INVOICES+'?'+urllib.parse.urlencode(params,doseq=True))
+    invoice_total(source,branch.title,day,INVOICE_SUPPLIERS)
+    return source
+
+
+def capture_invoices(context,branch,day,destination,source=None):
+    if source is None:source=fetch_invoices(context,branch,day)
+    # Revalidate cached HTML for this exact store/day before formatting it.
     invoice_total(source,branch.title,day,INVOICE_SUPPLIERS)
     doc=Report();doc.feed(source)
     matches=[]
