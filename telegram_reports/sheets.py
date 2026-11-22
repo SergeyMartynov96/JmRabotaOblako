@@ -6,6 +6,7 @@ import pypdfium2 as pdfium
 from daily_metrics.io import csv_sheet,native_cell,get
 from daily_metrics.core import target_candidates,a1,StructureError
 from daily_metrics.extended_core import extra_targets
+from .http import report_get
 
 
 def capture_week(context,branch,day,destination):
@@ -24,7 +25,7 @@ def capture_week(context,branch,day,destination):
     params={'format':'pdf','gid':branch.revenue_gid,'r1':max(0,header-1),'r2':last+1,'c1':0,'c2':width,
         'size':'A3','portrait':'false','scale':'4','gridlines':'true','sheetnames':'false','printtitle':'false',
         'pagenum':'UNDEFINED','top_margin':0.15,'bottom_margin':0.15,'left_margin':0.15,'right_margin':0.15}
-    response=context.request.get(f'https://docs.google.com/spreadsheets/d/{branch.book}/export?'+urllib.parse.urlencode(params),timeout=180000)
+    response=report_get(context,f'https://docs.google.com/spreadsheets/d/{branch.book}/export?'+urllib.parse.urlencode(params))
     data=response.body()
     if response.status!=200 or not data.startswith(b'%PDF'):raise StructureError('Native weekly Sheets export failed')
     pdf=pdfium.PdfDocument(data)

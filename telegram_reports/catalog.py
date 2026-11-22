@@ -1,6 +1,7 @@
 """Resolve only exact approved chart titles, then verify saved query metadata."""
 from daily_metrics.core import StructureError
 from .core import saved_chart,constrained_query,validate_data,validate_scope
+from .http import report_get
 
 CHARTS={
  'reasons':(241,'Списания. Причины. Период, %'),
@@ -76,7 +77,7 @@ class ReportCharts:
         form['adhoc_filters']=form.get('adhoc_filters',[])+[{'expressionType':'SIMPLE','subject':'title','operator':'IN',
             'comparator':[branch.title],'clause':'WHERE','isExtra':True,'isNew':False}]
         form['extra_form_data']={}
-        response=self.bi.context.request.get(BI+'/superset/explore_json/?'+urllib.parse.urlencode({'form_data':json.dumps(form,ensure_ascii=False),'force':'true'}),timeout=180000)
+        response=report_get(self.bi.context,BI+'/superset/explore_json/?'+urllib.parse.urlencode({'form_data':json.dumps(form,ensure_ascii=False),'force':'true'}))
         if response.status!=200:raise StructureError('BI stop-status HTTP '+str(response.status))
         payload=response.json()
         validate_scope(payload,start,end)

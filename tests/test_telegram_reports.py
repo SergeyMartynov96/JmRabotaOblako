@@ -250,7 +250,7 @@ class InvoiceTransportRetry(unittest.TestCase):
         from unittest.mock import patch
         source,ctx,response,error,url=self.setup_source()
         ctx.request.get.side_effect=[error('APIRequestContext.get: read ETIMEDOUT'),response]
-        with patch('telegram_reports.invoices.time.monotonic',side_effect=[0,0,17]):
+        with patch('telegram_reports.http.time.monotonic',side_effect=[0,0,17]):
             self.assertEqual(source(ctx,url),'validated later')
         self.assertEqual([c.args[0] for c in ctx.request.get.call_args_list],[url,url])
         self.assertEqual([c.kwargs['timeout'] for c in ctx.request.get.call_args_list],[180000,163000])
@@ -268,22 +268,22 @@ class InvoiceTransportRetry(unittest.TestCase):
         with self.assertRaises(StructureError):source(ctx,'https://su.lifemart.ru/turnover/waybill/update/1')
         ctx.request.get.assert_not_called()
 
-    def test_two_transport_failures_stop_and_expired_budget_stops_before_retry(self):
+    def test_three_transport_failures_stop_and_expired_budget_stops_before_retry(self):
         from unittest.mock import patch
         source,ctx,response,error,url=self.setup_source()
         ctx.request.get.side_effect=error('read ETIMEDOUT')
         with self.assertRaises(ConnectionError):source(ctx,url)
-        self.assertEqual(ctx.request.get.call_count,2)
+        self.assertEqual(ctx.request.get.call_count,3)
         ctx.request.get.reset_mock()
-        with patch('telegram_reports.invoices.time.monotonic',side_effect=[0,0,181]):
+        with patch('telegram_reports.http.time.monotonic',side_effect=[0,0,181]):
             with self.assertRaises(ConnectionError):source(ctx,url)
         self.assertEqual(ctx.request.get.call_count,1)
 
-    def test_temporary_server_responses_retry_but_stop_after_two(self):
+    def test_temporary_server_responses_retry_but_stop_after_three(self):
         source,ctx,response,error,url=self.setup_source()
         response.status=503;ctx.request.get.return_value=response
         with self.assertRaises(ConnectionError):source(ctx,url)
-        self.assertEqual(ctx.request.get.call_count,2)
+        self.assertEqual(ctx.request.get.call_count,3)
 
 
 class ReportBrowserLoginFallback(unittest.TestCase):
@@ -320,3 +320,35 @@ class ReportBrowserLoginFallback(unittest.TestCase):
         reader._browser_login.assert_called_once_with(page)
         client.ensure_authenticated.assert_not_called()
         self.assertEqual(page.bring_to_front.call_count,2)
+
+
+class SharedReportTransport(unittest.TestCase):
+    def test_only_existing_report_get_endpoints_are_allowed(self):
+        from unittest.mock import Mock
+        from telegram_reports.http import report_get
+        from daily_metrics.core import StructureError
+        from daily_metrics.config import BRANCHES
+        ctx=Mock();ctx.request.get.return_value.status=200
+        allowed=['https://bi.lifemart.ru/superset/explore/?form_data=1',
+            'https://bi.lifemart.ru/superset/explore_json/?form_data=1',
+            'https://su.lifemart.ru/turnover/waybill/report?day=21',
+            'https://docs.google.com/spreadsheets/d/'+BRANCHES[0].book+'/export?format=pdf']
+        for url in allowed:report_get(ctx,url)
+        self.assertEqual(ctx.request.get.call_count,4)
+        for url in ('http://bi.lifemart.ru/superset/explore/',
+                    'https://bi.lifemart.ru/api/v1/chart/1',
+                    'https://su.lifemart.ru/turnover/waybill/update/1',
+                    'https://example.com/superset/explore/',
+                    'https://docs.google.com/spreadsheets/d/unapproved/export'):
+            with self.assertRaises(StructureError):report_get(ctx,url)
+        self.assertEqual(ctx.request.get.call_count,4)
+
+    def test_nested_renderer_budget_is_not_reset(self):
+        from unittest.mock import Mock,patch
+        from telegram_reports.http import report_get
+        error=type('Error',(Exception,),{'__module__':'playwright._impl._errors'})
+        ctx=Mock();ctx.request.get.side_effect=error('read ETIMEDOUT')
+        with patch('telegram_reports.http.time.monotonic',side_effect=[0,0,30]):
+            with self.assertRaises(ConnectionError):
+                report_get(ctx,'https://bi.lifemart.ru/superset/explore/',timeout=20000)
+        ctx.request.get.assert_called_once_with('https://bi.lifemart.ru/superset/explore/',timeout=20000)

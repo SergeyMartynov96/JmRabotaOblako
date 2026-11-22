@@ -4,6 +4,7 @@ from pathlib import Path
 from daily_metrics.extended_io import BI
 from daily_metrics.core import StructureError
 from .security import arm_failed_cleanup,bounded_bi_operation
+from .http import report_get
 
 
 @bounded_bi_operation
@@ -19,7 +20,7 @@ def load_explore(bi,page,form,height,deadline):
     """Buffer the authorized HTML response before Chromium starts parsing it."""
     def remaining():return max(1,int((deadline-time.monotonic())*1000))
     url=BI+'/superset/explore/?'+urllib.parse.urlencode({'form_data':json.dumps(form,ensure_ascii=False),'standalone':'1','height':height})
-    response=bi.context.request.get(url,timeout=remaining())
+    response=report_get(bi.context,url,timeout=remaining())
     location=urllib.parse.urlsplit(response.url)
     if response.status!=200 or location.hostname!='bi.lifemart.ru' or location.path!='/superset/explore/':
         raise StructureError('BI renderer document authentication failed')
