@@ -284,3 +284,39 @@ class InvoiceTransportRetry(unittest.TestCase):
         response.status=503;ctx.request.get.return_value=response
         with self.assertRaises(ConnectionError):source(ctx,url)
         self.assertEqual(ctx.request.get.call_count,2)
+
+
+class ReportBrowserLoginFallback(unittest.TestCase):
+    def test_only_transport_errors_enable_browser_login(self):
+        import ssl,urllib.error
+        from unittest.mock import Mock,patch
+        from daily_metrics.core import StructureError
+        from telegram_reports.session import report_bi
+        for exc in (TimeoutError(),urllib.error.URLError('read timed out')):
+            client=Mock();client.ensure_authenticated.side_effect=exc;browser=Mock()
+            with patch('daily_metrics.extended_io.BIReports') as factory:
+                report_bi(browser,client)
+                factory.assert_called_once_with(browser,client,browser_login=True)
+        for exc in (StructureError('SU login failed'),urllib.error.HTTPError('https://su.lifemart.ru',403,'forbidden',{},None),
+                    urllib.error.URLError(ssl.SSLCertVerificationError('certificate'))):
+            client=Mock();client.ensure_authenticated.side_effect=exc
+            with patch('daily_metrics.extended_io.BIReports') as factory:
+                with self.assertRaises(type(exc)):report_bi(Mock(),client)
+                factory.assert_not_called()
+        client=Mock();browser=Mock()
+        with patch('daily_metrics.extended_io.BIReports') as factory:
+            report_bi(browser,client)
+            factory.assert_called_once_with(browser,client,browser_login=False)
+
+    def test_browser_mode_uses_active_login_page_without_repeating_http_failure(self):
+        from unittest.mock import Mock
+        from daily_metrics.extended_io import BIReports,BI
+        browser=Mock();client=Mock();client._authenticated=False
+        client.ensure_authenticated.side_effect=TimeoutError('cached HTTP failure')
+        page=browser.new_context.return_value.new_page.return_value
+        page.goto.return_value.status=200;page.url=BI+'/superset/dashboard/37/'
+        reader=BIReports(browser,client,browser_login=True);reader._browser_login=Mock()
+        reader.authenticate()
+        reader._browser_login.assert_called_once_with(page)
+        client.ensure_authenticated.assert_not_called()
+        self.assertEqual(page.bring_to_front.call_count,2)

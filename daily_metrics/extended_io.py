@@ -34,8 +34,8 @@ class BILinks(HTMLParser):
 
 
 class BIReports:
-    def __init__(self,browser,client):
-        self.browser=browser;self.client=client;self.context=None
+    def __init__(self,browser,client,*,browser_login=False):
+        self.browser=browser;self.client=client;self.context=None;self.browser_login=browser_login
         self.templates={};self.cache={};self._auth_error=None;self.csrf=None
 
     def authenticate(self):
@@ -54,7 +54,7 @@ class BIReports:
         print('BI: opening accounting session',flush=True)
         # Authenticate over HTTP before creating Chrome's accounting session.
         # A streamed login document can commit while its form never reaches DOM.
-        self.client.ensure_authenticated()
+        if not self.browser_login:self.client.ensure_authenticated()
         context=self.browser.new_context()
         try:
             for handler in self.client.opener.handlers if self.client._authenticated else []:
@@ -69,7 +69,9 @@ class BIReports:
                 else:route.continue_()
             page=context.new_page()
             try:
-                if not self.client._authenticated:self._browser_login(page)
+                if self.browser_login or not self.client._authenticated:
+                    if self.browser_login:page.bring_to_front()
+                    self._browser_login(page)
                 context.route('**/*',session_documents)
                 started=time.monotonic()
                 page.bring_to_front()

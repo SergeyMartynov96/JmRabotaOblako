@@ -12,7 +12,7 @@ from daily_metrics.core import StructureError
 from daily_metrics.run import reporting_day
 from daily_metrics.source_probe import safe_error
 from .catalog import ReportCharts,CHARTS
-from .session import ReportSUReports
+from .session import ReportSUReports,report_bi
 from .core import weekly_period,OSA_METRICS
 from .render import capture_chart,compose,active_page
 from .sheets import capture_week
@@ -151,8 +151,8 @@ def main():
         try:
             with sync_playwright() as pw:
                 browser=pw.chromium.launch(headless=not bool(os.getenv('DISPLAY')),executable_path=shutil.which('google-chrome'))
-                client=ReportSUReports();client.ensure_authenticated()
-                bi=BIReports(browser,client);charts=ReportCharts(bi)
+                client=ReportSUReports()
+                bi=report_bi(browser,client);charts=ReportCharts(bi)
                 bi.seal_before_exit=lambda:seal_tree(root,public,'review.enc.json')
                 bi.auth_failure_snapshot=auth_snapshot(root,public)
                 try:
