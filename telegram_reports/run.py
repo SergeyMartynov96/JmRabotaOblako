@@ -113,7 +113,7 @@ def preflight(collected,branches):
 
 
 def branches_for_delivery(branches,attempted,retry_branch='none'):
-    return [branch for branch in branches if branch.department not in attempted or branch.name==retry_branch]
+    return [branch for branch in branches if branch.department not in attempted or branch.name==retry_branch or retry_branch=='all']
 
 
 def deliver_albums(collected,bot,recipient,day):
@@ -152,7 +152,7 @@ def prior_attempts(day):
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--operation',choices=('preview','deliver','verify'),default='preview')
     parser.add_argument('--branch',choices=['all']+[b.name for b in BRANCHES],default='all')
-    parser.add_argument('--retry-branch',choices=['none']+[b.name for b in BRANCHES],default='none')
+    parser.add_argument('--retry-branch',choices=['none','all']+[b.name for b in BRANCHES],default='none')
     args=parser.parse_args()
     if args.retry_branch!='none' and (args.operation!='deliver' or os.getenv('GITHUB_EVENT_NAME')!='workflow_dispatch'):
         raise StructureError('Delivery override requires an explicit manual dispatch')

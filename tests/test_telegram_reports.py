@@ -477,6 +477,9 @@ class TelegramDeliveryOutcomes(unittest.TestCase):
         attempted={BRANCHES[0].department}
         self.assertEqual(branches_for_delivery(list(BRANCHES),attempted),list(BRANCHES[1:]))
         self.assertEqual(branches_for_delivery(list(BRANCHES),attempted,BRANCHES[0].name),list(BRANCHES))
+        all_attempted={b.department for b in BRANCHES}
+        self.assertEqual(branches_for_delivery(list(BRANCHES),all_attempted),[])
+        self.assertEqual(branches_for_delivery(list(BRANCHES),all_attempted,'all'),list(BRANCHES))
 
 
 class TelegramRecipientSafety(unittest.TestCase):

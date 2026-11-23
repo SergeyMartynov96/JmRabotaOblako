@@ -13,9 +13,9 @@ on:
         options: [all, АВ12, М42, Г34]
         default: all
       retry_branch:
-        description: Only after a definitive rejection or user-confirmed absence
+        description: Only for an explicitly requested repeat, definitive rejection, or confirmed absence
         type: choice
-        options: [none, АВ12, М42, Г34]
+        options: [none, all, АВ12, М42, Г34]
         default: none
       review_public_key:
         description: Optional base64 public key; required for preview

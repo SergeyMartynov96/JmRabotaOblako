@@ -35,7 +35,7 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--operation',choices=('preview','deliver','verify'),default='preview')
     parser.add_argument('--branch',choices=['all']+[b.name for b in BRANCHES],default='all')
-    parser.add_argument('--retry-branch',choices=['none']+[b.name for b in BRANCHES],default='none')
+    parser.add_argument('--retry-branch',choices=['none','all']+[b.name for b in BRANCHES],default='none')
     args=parser.parse_args()
     raise SystemExit(run_with_retry(args.operation,args.branch,retry_branch=None if args.retry_branch=='none' else args.retry_branch))
 
