@@ -41,3 +41,15 @@ class SourceRecovery(unittest.TestCase):
             self.assertEqual(actual['operation'],'verify')
         actual=av_resolve('workflow_dispatch',operation='apply',external_window='afternoon',requested_at='2026-11-23T21:05:53Z')
         self.assertEqual(actual['operation'],'apply')
+
+    def test_metrics_bi_browser_fallback_only_for_transport_failure(self):
+        from daily_metrics.extended_io import BIReports
+        import urllib.error,ssl
+        for failure,allowed in [(TimeoutError(),True),(urllib.error.HTTPError('https://su.lifemart.ru',403,'denied',{},None),False),(urllib.error.URLError(ssl.SSLCertVerificationError()),False)]:
+            browser=Mock();browser.new_context.side_effect=RuntimeError('browser stage reached')
+            client=Mock();client.ensure_authenticated.side_effect=failure
+            bi=BIReports(browser,client)
+            with self.assertRaises(RuntimeError if allowed else type(failure)):
+                bi.authenticate()
+            self.assertEqual(bi.browser_login,allowed)
+            self.assertEqual(browser.new_context.call_count,int(allowed))
