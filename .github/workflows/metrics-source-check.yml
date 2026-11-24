@@ -4,7 +4,7 @@ on:
     inputs:
       source:
         type: choice
-        options: [bi, invoices, cells, reasons]
+        options: [bi, invoices, cells, reasons, base]
         default: bi
       branch:
         type: choice

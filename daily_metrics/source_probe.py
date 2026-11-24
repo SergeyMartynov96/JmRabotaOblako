@@ -66,13 +66,45 @@ def verify_invoices(browser,client,branches,day):
     if failures:raise SystemExit(1)
 
 
+
+def verify_base(client,branches,day):
+    from .core import revenue_report,writeoff_report,tops,lower_targets,same_cell_value,DASH
+    from .io import tops_sheet
+    failures=[];verified=0
+    for branch in branches:
+        rows=csv_sheet(branch.book,branch.revenue_gid)
+        row,header=target_candidates(rows,day,branch.newest_first)[0]
+        lower,_=lower_targets(rows,header,day)
+        sources={
+            'revenue':lambda:([revenue_report(client.revenue(branch,day),branch.title,day)]*2,[(row,2),lower]),
+            'writeoff':lambda:([writeoff_report(client.writeoff(branch,day),branch.title,day)],[(row,3)]),
+            'tops':lambda:(tops(tops_sheet(branch.tops_book,day),day),[(row,6),(row,7),(row,8)]),
+        }
+        for kind,read in sources.items():
+            print(json.dumps({'stage':'read','branch':branch.name,'source':kind}),flush=True)
+            try:
+                expected,targets=read()
+                matches=[same_cell_value(value(rows,r,c),literal) for (r,c),literal in zip(targets,expected)]
+                valid=len(matches)==len(targets) and all(matches) and DASH not in expected
+                if not valid:failures.append(branch.name+': '+kind+' mismatch or missing')
+                else:verified+=len(matches)
+                print(json.dumps({'branch':branch.name,'source':kind,'matches_existing':valid,'checked_cells':len(matches)},ensure_ascii=False),flush=True)
+            except Exception as exc:
+                failures.append(branch.name+': '+kind)
+                print(json.dumps({'branch':branch.name,'source':kind,'error':safe_error(exc)},ensure_ascii=False),flush=True)
+    print(json.dumps({'verified_cells':verified,'failures':failures},ensure_ascii=False),flush=True)
+    if failures:raise SystemExit(1)
+
+
 def main():
     from playwright.sync_api import sync_playwright
     parser=argparse.ArgumentParser()
-    parser.add_argument('--source',choices=('bi','invoices','cells','reasons'),default='bi')
+    parser.add_argument('--source',choices=('bi','invoices','cells','reasons','base'),default='bi')
     parser.add_argument('--branch',choices=['all']+[b.name for b in BRANCHES],default='all')
     args=parser.parse_args();branches=[b for b in BRANCHES if args.branch in ('all',b.name)]
     day=reporting_day();client=SUReports();failures=[];verified=0
+    if args.source=='base':
+        verify_base(client,branches,day);return
     with sync_playwright() as pw:
         browser=pw.chromium.launch(headless=True,executable_path=shutil.which('google-chrome'))
         if args.source=='cells':
