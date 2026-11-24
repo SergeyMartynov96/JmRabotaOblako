@@ -284,7 +284,7 @@ class RevenueSheet:
         raise StructureError('Written cell not persisted ('+cell+')')
 
     def replace_if_unchanged(self,cell,expected,result):
-        """Only the approved defect+damage correction may replace a verified old scalar."""
+        """Replace a date-anchored approved reason scalar only if its old value still matches."""
         if cell not in self.allowed:raise StructureError('Write outside approved revenue cells')
         self.check_anchors()
         actual=self.stable_formula(cell)
@@ -301,4 +301,4 @@ class RevenueSheet:
             if same_cell_value(self.formula(cell),result):
                 self._wait_persisted(cell,result)
                 return True
-        raise StructureError('Combined damage write not verified')
+        raise StructureError('Reason correction write not verified')

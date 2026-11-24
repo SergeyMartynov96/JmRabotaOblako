@@ -77,9 +77,13 @@ def assembly_stage(branch,folder,stage):
         raise
 
 
-def assemble(browser,bi,branch,day,folder,panels,audit,osa,*,invoice_html=None):
+def assemble(browser,bi,branch,day,folder,panels,audit,osa,*,invoice_html=None,sync_reason_cells=False):
     images=[folder/f'{index:02}.png' for index in range(8)]
     with assembly_stage(branch,folder,'weekly_sheet'):
+        if sync_reason_cells:
+            from daily_metrics.extended_run import sync_report_reasons
+            summary=sync_report_reasons(browser,branch,day,audit['reasons']['payload'])
+            print(json.dumps({'branch':branch.name,'reason_cells_refreshed':summary['written']}),flush=True)
         capture_week(bi.context,branch,day,images[0])
     with assembly_stage(branch,folder,'invoices'):
         capture_invoices(bi.context,branch,day,images[1],source=invoice_html)
@@ -201,7 +205,7 @@ def main():
                         captured.append((branch,folder,collect_bi(browser,bi,charts,branch,day,folder)))
                     # No other browser page is opened until every BI image has finished.
                     for branch,folder,source in captured:
-                        images,text=assemble(browser,bi,branch,day,folder,*source,invoice_html=invoice_sources[branch.department])
+                        images,text=assemble(browser,bi,branch,day,folder,*source,invoice_html=invoice_sources[branch.department],sync_reason_cells=args.operation=='deliver')
                         collected.append((branch,images,text))
                 except Exception:
                     arm_failed_cleanup(bi)

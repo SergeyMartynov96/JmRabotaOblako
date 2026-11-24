@@ -1,12 +1,13 @@
-"""Blank-only transfer of yesterday's BI and invoice metrics."""
-from .core import DASH,StructureError,a1,money,same_cell_value
+"""Daily BI transfer; current reported reasons may refresh verified old scalars."""
+from .core import DASH,StructureError,a1,money,same_cell_value,number
 from .extended_core import extra_targets,percent_literal,reason_literal
 
 
-def fill_extra(sheet,sources,branch,day,header,row,rows,apply,summary,check_date):
+def fill_extra(sheet,sources,branch,day,header,row,rows,apply,summary,check_date,*,kinds=None):
     layout=extra_targets(rows,header,row,day)
     targets={name:[layout[name]] for name in ('uv','osa','invoices')}
     targets['reasons']=[cell for cells in layout['reasons'].values() for cell in cells]
+    if kinds is not None:targets={name:cells for name,cells in targets.items() if name in kinds}
     sheet.allowed.update(a1(r,c) for cells in targets.values() for r,c in cells)
     for r,c in layout['date_anchors']:
         cell=a1(r,c);sheet.anchors[cell]=sheet.anchor_value(cell)
@@ -37,20 +38,21 @@ def fill_extra(sheet,sources,branch,day,header,row,rows,apply,summary,check_date
         except Exception as exc:
             errors.append(metric+' source failed ('+type(exc).__name__+')'+(': '+str(exc) if isinstance(exc,StructureError) else ''))
             continue
-        if metric=='reasons' and reason_literal(result.get('damage',0),branch.name) is not None and getattr(result,'has_defect',False) and result.damage_base is not None:
-            # Owner explicitly requested damage + defects. Correct only a verified
-            # standalone damage scalar, preserving formulas and unrelated manual edits.
-            old=percent_literal(result.damage_base,branch.name,1)
-            merged=percent_literal(result['damage'],branch.name,1)
-            for r,c in layout['reasons'].get('damage',[]):
-                if (r,c) in pending or same_cell_value(old,merged):continue
+        if metric=='reasons':
+            # Source-authoritative only for reported, nonzero reason values.
+            # Formulas, other metrics and concurrent edits remain protected.
+            for (r,c),literal in values.items():
+                if (r,c) in pending:continue
                 cell=a1(r,c);current=sheet.stable_formula(cell)
-                if not same_cell_value(current,old):continue
+                if current.startswith('=') or same_cell_value(current,literal):continue
+                try:number(current)
+                except StructureError:continue
                 check_date(day)
                 if apply:
-                    if sheet.replace_if_unchanged(cell,old,merged):
+                    if sheet.replace_if_unchanged(cell,current,literal):
                         summary['preserved']-=1;summary['written']+=1
-                        summary['reconciled_damage']=summary.get('reconciled_damage',0)+1
+                        summary['reconciled_reasons']=summary.get('reconciled_reasons',0)+1
+                    else:errors.append('reasons destination changed during reconciliation')
                 else:summary['preserved']-=1;summary['planned']+=1
         for r,c in pending:
             if (r,c) not in values:continue
@@ -63,3 +65,30 @@ def fill_extra(sheet,sources,branch,day,header,row,rows,apply,summary,check_date
             else:
                 summary['planned']+=1;summary['missing']+=literal==DASH
     return errors
+
+
+def sync_report_reasons(browser,branch,day,payload):
+    """Use the report's already validated exact-day dataset before native export."""
+    from types import SimpleNamespace
+    from .io import RevenueSheet
+    from .core import target_candidates
+    from .extended_core import bi_reasons
+    from .run import check_date
+    check_date(day)
+    result=bi_reasons(payload,'Списания %')
+    if getattr(result,'unmapped',[]):raise StructureError('Unmapped report reason; summary not refreshed')
+    sheet=RevenueSheet(browser,branch,day)
+    try:
+        rows=sheet.refresh()
+        found=[(r,h) for r,h in target_candidates(rows,day,branch.newest_first)
+               if sheet.is_reporting_date(a1(r,0),day)]
+        if len(found)!=1:raise StructureError('Report reason date missing or ambiguous')
+        row,header=found[0]
+        sheet.allowed=set()
+        date=a1(row,0);sheet.anchors={date:sheet.anchor_value(date)}
+        summary={'written':0,'preserved':0,'missing':0,'planned':0}
+        frozen=SimpleNamespace(read=lambda kind,b,d:result)
+        errors=fill_extra(sheet,frozen,branch,day,header,row,rows,True,summary,check_date,kinds=('reasons',))
+        if errors:raise StructureError('Report reason reconciliation incomplete')
+        return summary
+    finally:sheet.page.close()

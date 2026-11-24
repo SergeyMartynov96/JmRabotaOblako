@@ -207,7 +207,7 @@ class CombinedDamage(unittest.TestCase):
         self.assertEqual(errors,[])
         sheet.replace_if_unchanged.assert_called_once_with('O18','0,1','0,3')
         sheet.put_blank.assert_not_called()
-        self.assertEqual(summary['reconciled_damage'],1)
+        self.assertEqual(summary['reconciled_reasons'],1)
         self.assertEqual(summary['written'],1)
     def test_changed_manual_value_and_formula_are_never_replaced(self):
         from unittest.mock import Mock
