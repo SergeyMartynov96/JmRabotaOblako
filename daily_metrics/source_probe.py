@@ -1,5 +1,6 @@
 """Manual, read-only source verification. Never logs source financial values."""
-import json,shutil,argparse,urllib.parse
+import json,shutil,argparse,urllib.parse,os,tempfile
+from pathlib import Path
 from .config import BRANCHES
 from .io import csv_sheet
 from .session import ReportSUReports as SUReports
@@ -70,7 +71,7 @@ def verify_invoices(browser,client,branches,day):
 def verify_base(client,branches,day):
     from .core import revenue_report,writeoff_report,tops,lower_targets,same_cell_value,DASH
     from .io import tops_sheet
-    failures=[];verified=0
+    failures=[];verified=0;details=[]
     for branch in branches:
         rows=csv_sheet(branch.book,branch.revenue_gid)
         row,header=target_candidates(rows,day,branch.newest_first)[0]
@@ -84,6 +85,7 @@ def verify_base(client,branches,day):
             print(json.dumps({'stage':'read','branch':branch.name,'source':kind}),flush=True)
             try:
                 expected,targets=read()
+                details.append({'branch':branch.name,'source':kind,'date':str(day),'expected':expected,'stored':[value(rows,r,c) for r,c in targets],'cells':targets})
                 matches=[same_cell_value(value(rows,r,c),literal) for (r,c),literal in zip(targets,expected)]
                 valid=len(matches)==len(targets) and all(matches) and DASH not in expected
                 if not valid:failures.append(branch.name+': '+kind+' mismatch or missing')
@@ -92,6 +94,11 @@ def verify_base(client,branches,day):
             except Exception as exc:
                 failures.append(branch.name+': '+kind)
                 print(json.dumps({'branch':branch.name,'source':kind,'error':safe_error(exc)},ensure_ascii=False),flush=True)
+    if os.getenv('REVIEW_PUBLIC_KEY'):
+        from telegram_reports.security import seal_images
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory,'audit.json').write_text(json.dumps(details,ensure_ascii=False))
+            seal_images(directory,os.environ['REVIEW_PUBLIC_KEY'],'review.enc.json')
     print(json.dumps({'verified_cells':verified,'failures':failures},ensure_ascii=False),flush=True)
     if failures:raise SystemExit(1)
 

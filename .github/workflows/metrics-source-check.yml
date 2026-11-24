@@ -10,6 +10,9 @@ on:
         type: choice
         options: [all, АВ12, М42, Г34]
         default: all
+      review_public_key:
+        type: string
+        required: false
 permissions:
   contents: read
 jobs:
@@ -24,9 +27,19 @@ jobs:
         with:
           persist-credentials: false
       - name: Install browser API
-        run: python3 -m pip install playwright==1.62.0
+        run: python3 -m pip install playwright==1.62.0 cryptography==50.0.0
       - name: Inspect permitted report schemas without writes
         env:
+          REVIEW_PUBLIC_KEY: ${{ inputs.review_public_key }}
           SOURCE: ${{ inputs.source || 'bi' }}
           BRANCH: ${{ inputs.branch || 'all' }}
         run: python3 -m daily_metrics.source_probe --source "$SOURCE" --branch "$BRANCH"
+
+      - name: Preserve encrypted audit only
+        if: always() && inputs.review_public_key != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: encrypted-source-audit
+          path: review.enc.json
+          if-no-files-found: ignore
+          retention-days: 1
