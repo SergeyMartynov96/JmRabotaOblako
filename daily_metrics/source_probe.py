@@ -1,5 +1,5 @@
 """Manual, read-only source verification. Never logs source financial values."""
-import json,shutil,argparse,urllib.parse,os,tempfile
+import json,shutil,argparse,urllib.parse,urllib.error,ssl,os,tempfile
 from pathlib import Path
 from .config import BRANCHES
 from .io import csv_sheet
@@ -40,8 +40,9 @@ def verify_invoices(browser,client,branches,day):
     try:
         try:
             client.ensure_authenticated()
-        except __import__('urllib.error',fromlist=['HTTPError']).HTTPError:raise
-        except (TimeoutError,__import__('urllib.error',fromlist=['URLError']).URLError):
+        except urllib.error.HTTPError:raise
+        except (TimeoutError,urllib.error.URLError) as exc:
+            if isinstance(getattr(exc,'reason',None),ssl.SSLCertVerificationError):raise
             sources.bi._browser_login(page)
             sources.client=InvoiceBrowserClient(context)
         page.close()
