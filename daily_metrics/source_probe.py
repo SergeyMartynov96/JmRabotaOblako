@@ -27,9 +27,8 @@ class InvoiceBrowserClient:
         parsed=urllib.parse.urlsplit(path)
         if data is not None or parsed.scheme or parsed.netloc or parsed.path!='/turnover/waybill/report':
             raise ValueError('Only invoice report GET allowed')
-        response=self.context.request.get(SU+path,timeout=120000)
-        if response.status!=200:raise StructureError('Invoice read HTTP '+str(response.status))
-        html=response.text()
+        from telegram_reports.invoices import invoice_source
+        html=invoice_source(self.context,SU+path)
         if 'LoginForm[password]' in html:raise StructureError('SU invoice session expired')
         return html
 
