@@ -56,6 +56,9 @@ def verify_invoices(browser,client,branches,day):
                     info['matches_rounded_existing']=number(money(result))==expected
                     info['matches_existing_without_kopecks']=result.quantize(Decimal('1'),rounding=ROUND_DOWN)==expected
                     info['has_kopecks']=result!=result.quantize(Decimal('1'),rounding=ROUND_DOWN)
+                    if not (info['matches_rounded_existing'] or info['matches_existing_without_kopecks']):
+                        failures.append(branch.name+': invoices destination mismatch')
+                else:failures.append(branch.name+': invoices destination missing')
                 verified+=1
                 print(json.dumps(info,ensure_ascii=False),flush=True)
             except Exception as exc:
@@ -190,6 +193,8 @@ def main():
                                 actual=number(result).quantize(Decimal(10)**-copy_places,rounding=ROUND_HALF_UP)
                                 actual=actual.quantize(Decimal(10)**-places,rounding=ROUND_HALF_UP)
                                 info['matches_existing']=actual==expected
+                                if not info['matches_existing']:failures.append(branch.name+': '+kind+' destination mismatch')
+                            elif result is not None:failures.append(branch.name+': '+kind+' destination missing')
                         if result is not None:verified+=1
                         else:failures.append(branch.name+': '+kind+' empty')
                         print(json.dumps(info,ensure_ascii=False),flush=True)
