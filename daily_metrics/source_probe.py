@@ -38,9 +38,13 @@ def verify_invoices(browser,client,branches,day):
     context=browser.new_context();page=context.new_page()
     sources=ExtraSources(browser,client);failures=[];verified=0
     try:
-        sources.bi._browser_login(page)
+        try:
+            client.ensure_authenticated()
+        except __import__('urllib.error',fromlist=['HTTPError']).HTTPError:raise
+        except (TimeoutError,__import__('urllib.error',fromlist=['URLError']).URLError):
+            sources.bi._browser_login(page)
+            sources.client=InvoiceBrowserClient(context)
         page.close()
-        sources.client=InvoiceBrowserClient(context)
         for branch in branches:
             print(json.dumps({'stage':'read','branch':branch.name,'source':'invoices'}),flush=True)
             try:
