@@ -81,12 +81,14 @@ class SUReports:
         fast=urllib.parse.urlsplit(path).path=='/site/login'
         report=urllib.parse.urlsplit(path).path in (REVENUE,WRITEOFF)
         attempts=3 if fast or report else 1
-        deadline=time.monotonic()+180 if report else None
+        report_budget=660 if path==REVENUE else 180
+        report_socket=600 if path==REVENUE else 45
+        deadline=time.monotonic()+report_budget if report else None
         for attempt in range(attempts):
             try:
                 remaining=deadline-time.monotonic() if report else None
                 if report and remaining<=0:raise TimeoutError('SU report deadline exceeded')
-                with self.opener.open(SU+path,encoded,timeout=min(45,remaining) if report else (35 if fast else 180 if urllib.parse.urlsplit(path).path=='/handbook/biSupersetSettings/index' else 120)) as response:
+                with self.opener.open(SU+path,encoded,timeout=min(report_socket,remaining) if report else (35 if fast else 180 if urllib.parse.urlsplit(path).path=='/handbook/biSupersetSettings/index' else 120)) as response:
                     if report:
                         chunks=[]
                         while time.monotonic()<deadline:

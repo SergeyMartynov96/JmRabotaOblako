@@ -16,7 +16,7 @@ class SourceRecovery(unittest.TestCase):
         client.opener.open.side_effect=[TimeoutError(),context]
         self.assertEqual(client.request(REVENUE,{'format':'1'}),'<table>ok</table>')
         self.assertEqual(client.opener.open.call_count,2)
-        self.assertTrue(all(c.kwargs['timeout']<=45 for c in client.opener.open.call_args_list))
+        self.assertTrue(all(c.kwargs['timeout']<=600 for c in client.opener.open.call_args_list))
 
     def test_late_native_evening_runs_do_not_apply_next_day(self):
         for scope in ('К44','Х76'):
@@ -26,3 +26,10 @@ class SourceRecovery(unittest.TestCase):
             self.assertEqual(normal['operation'],'apply')
             manual=resolve('workflow_dispatch','apply','2026-11-23T22:19:39Z',scope)
             self.assertEqual(manual['operation'],'apply')
+
+    def test_rc_defects_combine_with_damage(self):
+        from decimal import Decimal
+        result=bi_reasons({'result':[{'data':[{'reason':'Порча','p':.001},{'reason':'Брак РЦ','p':.002}]}]},'p')
+        self.assertEqual(result['damage'],Decimal('.300'))
+        self.assertTrue(result.has_defect)
+        self.assertEqual(result.unmapped,[])
