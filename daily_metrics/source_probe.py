@@ -75,7 +75,7 @@ def verify_invoices(browser,client,branches,day):
 
 
 
-def verify_base(client,branches,day):
+def verify_base(client,branches,day,kinds=None):
     from .core import revenue_report,writeoff_report,tops,lower_targets,same_cell_value,DASH
     from .io import tops_sheet
     failures=[];verified=0;details=[]
@@ -89,6 +89,7 @@ def verify_base(client,branches,day):
             'tops':lambda:(tops(tops_sheet(branch.tops_book,day),day),[(row,6),(row,7),(row,8)]),
         }
         for kind,read in sources.items():
+            if kinds is not None and kind not in kinds:continue
             print(json.dumps({'stage':'read','branch':branch.name,'source':kind}),flush=True)
             try:
                 expected,targets=read()
@@ -113,12 +114,12 @@ def verify_base(client,branches,day):
 def main():
     from playwright.sync_api import sync_playwright
     parser=argparse.ArgumentParser()
-    parser.add_argument('--source',choices=('bi','invoices','cells','reasons','base'),default='bi')
+    parser.add_argument('--source',choices=('bi','invoices','cells','reasons','base','writeoff'),default='bi')
     parser.add_argument('--branch',choices=['all']+[b.name for b in BRANCHES],default='all')
     args=parser.parse_args();branches=[b for b in BRANCHES if args.branch in ('all',b.name)]
     day=reporting_day();client=SUReports();failures=[];verified=0
-    if args.source=='base':
-        verify_base(client,branches,day);return
+    if args.source in ('base','writeoff'):
+        verify_base(client,branches,day,('writeoff',) if args.source=='writeoff' else None);return
     with sync_playwright() as pw:
         browser=pw.chromium.launch(headless=True,executable_path=shutil.which('google-chrome'))
         if args.source=='cells':
