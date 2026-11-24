@@ -89,6 +89,13 @@ def capture_chart(bi,form,payload,destination,width=900,height=430):
         Path(destination).with_suffix('.error.json').write_text(json.dumps({'type':type(exc).__name__,'message':str(exc)}))
         code=re.search(r'(?:net::)?ERR_[A-Z_]+',str(exc))
         print(json.dumps({'renderer_failed_phase':locals().get('phase','setup'),'slice_id':form.get('slice_id'),'transport_code':code.group(0) if code else None}),flush=True)
+        try:
+            state=page.evaluate("""() => ({ready:document.readyState, visible:document.visibilityState,
+                tables:document.querySelectorAll('table').length, charts:document.querySelectorAll('svg,canvas').length,
+                loading:document.querySelectorAll('[data-test=\"loading-indicator\"]').length,
+                scripts:document.scripts.length})""")
+            print(json.dumps({'renderer_state':state,'dataset_requests':len(served)}),flush=True)
+        except Exception:pass
         try:page.screenshot(path=str(Path(destination).with_suffix(".failed.png")),timeout=5000)
         except Exception:pass
         raise
