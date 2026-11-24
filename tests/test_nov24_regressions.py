@@ -53,3 +53,46 @@ class SourceRecovery(unittest.TestCase):
                 bi.authenticate()
             self.assertEqual(bi.browser_login,allowed)
             self.assertEqual(browser.new_context.call_count,int(allowed))
+
+    def test_damage_alone_never_creates_raw_defect(self):
+        result=bi_reasons({'result':[{'data':[{'reason':'Порча','p':.001}]}]},'p')
+        self.assertIn('damage',result)
+        self.assertNotIn('raw_defect',result)
+        result=bi_reasons({'result':[{'data':[{'reason':'Порча','p':.001},{'reason':'Брак','p':.002}]}]},'p')
+        self.assertEqual(result['damage'],result['raw_defect']+result.damage_base)
+
+    def test_native_bootstrap_reloads_once_only_before_dataset_request(self):
+        from telegram_reports import render
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        for served in ([],[True]):
+            page=Mock();page.wait_for_function.side_effect=[None,render.BrowserTimeout('bootstrap stalled'),None,None]
+            with patch.object(render,'load_explore',return_value=SimpleNamespace(status=200)) as load,patch.object(render.time,'monotonic',return_value=0):
+                if served:
+                    with self.assertRaises(render.BrowserTimeout):render.load_chart_document(Mock(),page,{},400,180,served)
+                    self.assertEqual(load.call_count,1)
+                else:
+                    render.load_chart_document(Mock(),page,{},400,180,served)
+                    self.assertEqual(load.call_count,2)
+                    page.bring_to_front.assert_called_once()
+
+    def test_native_bootstrap_never_exceeds_two_document_attempts(self):
+        from telegram_reports import render
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        page=Mock();page.wait_for_function.side_effect=[None,render.BrowserTimeout('stalled'),None,render.BrowserTimeout('stalled')]
+        with patch.object(render,'load_explore',return_value=SimpleNamespace(status=200)) as load,patch.object(render.time,'monotonic',return_value=0):
+            with self.assertRaises(render.BrowserTimeout):render.load_chart_document(Mock(),page,{},400,180,[])
+            self.assertEqual(load.call_count,2)
+
+    def test_separate_defect_header_is_not_aggregate_damage_target(self):
+        from daily_metrics.extended_core import extra_targets
+        rows=[['']*19 for _ in range(45)]
+        rows[0][5]='УВ';rows[0][9]='OSA 20:00';rows[0][15]='по накладным'
+        rows[10][11:17]=['СГ закуп','цех','расходка','порча','маркетинг','дегустация']
+        rows[21][10:17]=['Брак','СГ ротация','СГ товароб.','СГ мин. сум.','СГ ручное','СГ мин. ост.','СГ пост.']
+        for start in (11,22):
+            for offset in range(7):rows[start+offset][9]=f'{16+offset}.11'
+        result=extra_targets(rows,0,3,dt.date(2026,11,18))
+        self.assertEqual(result['reasons']['damage'],[(13,14)])
+        self.assertEqual(result['reasons']['raw_defect'],[(24,10)])

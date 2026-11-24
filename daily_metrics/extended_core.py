@@ -60,7 +60,7 @@ def extra_targets(rows,header,day_row,day):
     reasons={}
     date_anchors=set()
     for r in range(header+8,end):
-        mapped=[(c,reason_key(v)) for c,v in enumerate(rows[r][:19]) if reason_key(v)]
+        mapped=[(c,'raw_defect' if key(v)=='брак' else reason_key(v)) for c,v in enumerate(rows[r][:19]) if reason_key(v)]
         if not mapped:continue
         # A header may contain two repeated SG-purchase locations, one in each block.
         left=min(c for c,_ in mapped)
@@ -69,7 +69,7 @@ def extra_targets(rows,header,day_row,day):
         if len(dates)!=1:raise StructureError('Reason date missing or ambiguous')
         rr,dc=dates[0];date_anchors.add((rr,dc))
         for col,name in mapped:reasons.setdefault(name,[]).append((rr,col))
-    if set(reasons)!=set(REASON_ALIASES):raise StructureError('Incomplete reason column layout')
+    if set(reasons)-{'raw_defect'}!=set(REASON_ALIASES):raise StructureError('Incomplete reason column layout')
     fields['reasons']=reasons
     fields['date_anchors']=sorted(date_anchors)
     return fields
@@ -152,7 +152,9 @@ def bi_reasons(payload,metric):
         if name=='damage':
             values[name]=values.get(name,Decimal(0))+result
             if raw=='порча':values.damage_base=result
-            if raw in ('брак','бракрц'):values.has_defect=True
+            if raw in ('брак','бракрц'):
+                values.has_defect=True
+                values['raw_defect']=values.get('raw_defect',Decimal(0))+result
         elif name=='tasting':
             # Owner maps training into tasting, including days with both causes.
             values[name]=values.get(name,Decimal(0))+result

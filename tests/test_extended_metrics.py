@@ -179,7 +179,7 @@ class ChartBinding(unittest.TestCase):
         from daily_metrics.extended_core import bi_reasons
         from decimal import Decimal
         payload={'result':[{'data':[{'reason':'Порча','Списания %':.001},{'reason':'Брак','Списания %':.002}]}]}
-        self.assertEqual(bi_reasons(payload,'Списания %'),{'damage':Decimal('.300')})
+        self.assertEqual(bi_reasons(payload,'Списания %'),{'damage':Decimal('.300'),'raw_defect':Decimal('.200')})
 
 class CombinedDamage(unittest.TestCase):
     def test_defect_metadata_does_not_leak_to_other_store(self):

@@ -5,6 +5,7 @@ from daily_metrics.extended_io import BI
 from daily_metrics.core import StructureError
 from .security import arm_failed_cleanup,bounded_bi_operation
 from .http import report_get
+from playwright.sync_api import TimeoutError as BrowserTimeout
 
 
 @bounded_bi_operation
@@ -38,6 +39,22 @@ def load_explore(bi,page,form,height,deadline):
     finally:page.unroute(pattern,document_response)
 
 
+def load_chart_document(bi,page,form,height,deadline,served):
+    """One bootstrap reload, before the plugin requests its validated data."""
+    for attempt in range(2):
+        response=load_explore(bi,page,form,height,deadline)
+        if response is None or response.status!=200:raise StructureError('BI renderer document failed')
+        remaining=max(1,int((deadline-time.monotonic())*1000))
+        page.wait_for_function("() => document.visibilityState==='visible'",timeout=remaining)
+        try:
+            page.wait_for_function("""() => !!document.querySelector('svg,canvas,table') && !document.querySelector('[data-test="loading-indicator"]')""",timeout=min(60000,max(1,int((deadline-time.monotonic())*1000))))
+            return
+        except BrowserTimeout:
+            if attempt or served or time.monotonic()>=deadline:raise
+            print(json.dumps({'renderer_bootstrap_reload':True,'slice_id':form.get('slice_id')}),flush=True)
+            page.bring_to_front()
+
+
 @bounded_bi_operation
 def capture_chart(bi,form,payload,destination,width=900,height=430):
     deadline=time.monotonic()+180
@@ -54,11 +71,8 @@ def capture_chart(bi,form,payload,destination,width=900,height=430):
     try:
         phase='document'
         print(json.dumps({'renderer_phase':phase,'slice_id':form.get('slice_id')}),flush=True)
-        response=load_explore(bi,page,form,height,deadline)
-        if response is None or response.status!=200:raise StructureError('BI renderer document failed')
+        load_chart_document(bi,page,form,height,deadline,served)
         phase='visible_content'
-        page.wait_for_function("() => document.visibilityState==='visible'",timeout=remaining())
-        page.wait_for_function("""() => !!document.querySelector('svg,canvas,table') && !document.querySelector('[data-test="loading-indicator"]')""",timeout=remaining())
         # Wait for the validated result to reach the actual renderer, not just an empty scaffold.
         while not served and time.monotonic()<deadline:page.wait_for_timeout(100)
         if not served:raise StructureError('BI renderer did not request the validated dataset')
