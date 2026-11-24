@@ -2,6 +2,8 @@
 import json
 import time
 import os
+import ssl
+import urllib.error
 import urllib.parse
 from html.parser import HTMLParser
 from .core import StructureError
@@ -54,7 +56,13 @@ class BIReports:
         print('BI: opening accounting session',flush=True)
         # Authenticate over HTTP before creating Chrome's accounting session.
         # A streamed login document can commit while its form never reaches DOM.
-        if not self.browser_login:self.client.ensure_authenticated()
+        if not self.browser_login:
+            try:self.client.ensure_authenticated()
+            except urllib.error.HTTPError:raise
+            except (TimeoutError,urllib.error.URLError) as exc:
+                if isinstance(getattr(exc,'reason',None),ssl.SSLCertVerificationError):raise
+                self.browser_login=True
+                print('BI: HTTP login transport unavailable; using the normal active Chrome sign-in page',flush=True)
         context=self.browser.new_context()
         try:
             for handler in self.client.opener.handlers if self.client._authenticated else []:
