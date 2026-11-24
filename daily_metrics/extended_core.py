@@ -8,7 +8,7 @@ REASON_ALIASES={
     'sg_purchase':('сг закуп','срок годности закуп'),
     'workshop':('цех','цеховое питание'),
     'consumables':('расходка','расходные материалы'),
-    'damage':('порча','брак'),
+    'damage':('порча','брак','брак рц'),
     'marketing':('маркетинг',),
     'tasting':('дегустация','обучение'),
     'sg_rotation':('сг ротация','срок годности ротация'),
@@ -152,7 +152,7 @@ def bi_reasons(payload,metric):
         if name=='damage':
             values[name]=values.get(name,Decimal(0))+result
             if raw=='порча':values.damage_base=result
-            if raw=='брак':values.has_defect=True
+            if raw in ('брак','бракрц'):values.has_defect=True
         elif name=='tasting':
             # Owner maps training into tasting, including days with both causes.
             values[name]=values.get(name,Decimal(0))+result

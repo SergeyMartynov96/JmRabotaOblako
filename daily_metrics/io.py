@@ -79,11 +79,23 @@ class SUReports:
             raise ValueError('Only login and revenue report POST allowed')
         encoded=urllib.parse.urlencode(data,doseq=True).encode() if data is not None else None
         fast=urllib.parse.urlsplit(path).path=='/site/login'
-        attempts=3 if fast else 1
+        report=urllib.parse.urlsplit(path).path in (REVENUE,WRITEOFF)
+        attempts=3 if fast or report else 1
+        deadline=time.monotonic()+180 if report else None
         for attempt in range(attempts):
             try:
-                with self.opener.open(SU+path,encoded,timeout=35 if fast else (600 if path==REVENUE else 180 if urllib.parse.urlsplit(path).path=='/handbook/biSupersetSettings/index' else 120)) as response:
-                    result=response.read().decode()
+                remaining=deadline-time.monotonic() if report else None
+                if report and remaining<=0:raise TimeoutError('SU report deadline exceeded')
+                with self.opener.open(SU+path,encoded,timeout=min(45,remaining) if report else (35 if fast else 180 if urllib.parse.urlsplit(path).path=='/handbook/biSupersetSettings/index' else 120)) as response:
+                    if report:
+                        chunks=[]
+                        while time.monotonic()<deadline:
+                            chunk=response.read1(65536)
+                            if not chunk:break
+                            chunks.append(chunk)
+                        else:raise TimeoutError('SU report deadline exceeded')
+                        result=b''.join(chunks).decode()
+                    else:result=response.read().decode()
                 break
             except urllib.error.HTTPError as exc:
                 if exc.code not in (429,500,502,503,504) or attempt+1==attempts:raise

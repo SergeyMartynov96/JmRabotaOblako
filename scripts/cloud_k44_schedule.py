@@ -17,7 +17,12 @@ def resolve(event, operation='preview', requested_at=None, scope='К44'):
         requested_at = dt.datetime.fromisoformat(requested_at.replace('Z', '+00:00'))
     if requested_at.tzinfo is None:
         raise ValueError('Timezone required')
-    date = requested_at.astimezone(ZoneInfo('Asia/Yekaterinburg')).date().isoformat()
+    local = requested_at.astimezone(ZoneInfo('Asia/Yekaterinburg'))
+    date = local.date().isoformat()
+    # A delayed native cron after midnight must not open tomorrow's business window.
+    # No receipt or completion pulse is issued for this verification-only pass.
+    if event == 'schedule' and local.time() < dt.time(16):
+        operation = 'verify'
     if scope == 'Х76' and operation == 'apply' and date < '2026-11-18':
         operation = 'verify'  # Not a completed business pass: no receipt or pulse.
     return dict(operation=operation, slots='09:00,10:00,11:00,12:00,13:00,14:00,15:00,16:00',
