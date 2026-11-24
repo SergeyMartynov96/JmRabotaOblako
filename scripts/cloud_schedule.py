@@ -50,8 +50,10 @@ def resolve(event, schedule='', operation='preview', slots='15:00,16:00',
             requested_at = dt.datetime.fromisoformat(requested_at.replace('Z', '+00:00'))
         if requested_at.tzinfo is None:
             raise ValueError('Trigger timestamp requires timezone')
-        date = requested_at.astimezone(TZ).date().isoformat()
-        return dict(operation='apply', slots=config['slots'], deadline='',
+        local = requested_at.astimezone(TZ)
+        date = local.date().isoformat()
+        operation = ('verify' if event == 'schedule' and local.strftime('%H:%M') < config['start'] else 'apply')
+        return dict(operation=operation, slots=config['slots'], deadline='',
                     allow_empty='false', start=config['start'], expected_date=date,
                     window_key=date + '-' + key, window=key, include_sent='true')
     requested_at = requested_at or dt.datetime.now(dt.timezone.utc)

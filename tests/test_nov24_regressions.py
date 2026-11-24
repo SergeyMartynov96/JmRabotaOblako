@@ -33,3 +33,11 @@ class SourceRecovery(unittest.TestCase):
         self.assertEqual(result['damage'],Decimal('.300'))
         self.assertTrue(result.has_defect)
         self.assertEqual(result.unmapped,[])
+
+    def test_delayed_native_av_windows_do_not_open_before_start(self):
+        from scripts.cloud_schedule import resolve as av_resolve, WINDOW_CONFIG
+        for config in WINDOW_CONFIG.values():
+            actual=av_resolve('schedule',config['cron'],requested_at='2026-11-23T21:05:53Z')
+            self.assertEqual(actual['operation'],'verify')
+        actual=av_resolve('workflow_dispatch',operation='apply',external_window='afternoon',requested_at='2026-11-23T21:05:53Z')
+        self.assertEqual(actual['operation'],'apply')

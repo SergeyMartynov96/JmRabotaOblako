@@ -16,9 +16,9 @@ import external_cron_config as external
 class ExternalScheduleChecks(unittest.TestCase):
     def test_native_and_external_triggers_share_window_key(self):
         for key, config in schedule.WINDOW_CONFIG.items():
-            native = schedule.resolve('schedule', config['cron'], requested_at='2026-11-09T03:30:00Z')
+            native = schedule.resolve('schedule', config['cron'], requested_at='2026-11-09T10:00:00Z')
             direct = schedule.resolve('workflow_dispatch', operation='apply', external_window=key,
-                                      requested_at='2026-11-09T03:35:00Z')
+                                      requested_at='2026-11-09T10:05:00Z')
             self.assertEqual(native, direct)
             self.assertEqual(direct['window_key'], '2026-11-09-' + key)
             self.assertEqual(direct['slots'], config['slots'])
