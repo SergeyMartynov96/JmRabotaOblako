@@ -70,8 +70,8 @@ def fill_extra(sheet,sources,branch,day,header,row,rows,apply,summary,check_date
 def sync_report_reasons(browser,branch,day,payload):
     """Use the report's already validated exact-day dataset before native export."""
     from types import SimpleNamespace
-    from .io import RevenueSheet
-    from .core import target_candidates
+    from .io import RevenueSheet,native_cell
+    from .core import target_candidates,value
     from .extended_core import bi_reasons
     from .run import check_date
     check_date(day)
@@ -90,5 +90,16 @@ def sync_report_reasons(browser,branch,day,payload):
         frozen=SimpleNamespace(read=lambda kind,b,d:result)
         errors=fill_extra(sheet,frozen,branch,day,header,row,rows,True,summary,check_date,kinds=('reasons',))
         if errors:raise StructureError('Report reason reconciliation incomplete')
+        current=sheet.refresh();layout=extra_targets(current,header,row,day)
+        for name,amount in result.items():
+            literal=reason_literal(amount,branch.name)
+            if literal is None:continue
+            for r,c in layout['reasons'].get(name,[]):
+                if same_cell_value(value(current,r,c),literal):continue
+                # Check the underlying value if a formatted CSV is stale or a
+                # formula was intentionally preserved instead of overwritten.
+                _,raw=native_cell(branch.book,branch.revenue_gid,a1(r,c))
+                if raw is None or not same_cell_value(str(raw),literal):
+                    raise StructureError('Report reason snapshot differs from saved summary')
         return summary
     finally:sheet.page.close()
