@@ -50,7 +50,7 @@ def fetch_invoices(context,branch,day):
         'Waybill[recipient_id][]':[str(branch.department)],'Waybill[contractor_id][]':list(INVOICE_SUPPLIERS),
         'Waybill[itemsOnPage]':'1000','yt19':'Сформировать'}
     source=invoice_source(context,SU+INVOICES+'?'+urllib.parse.urlencode(params,doseq=True))
-    invoice_total(source,branch.title,day,INVOICE_SUPPLIERS)
+    invoice_excerpt(source,branch,day)
     return source
 
 
@@ -77,9 +77,8 @@ def source_totals(table,start,columns,data):
     return totals
 
 
-def capture_invoices(context,branch,day,destination,source=None):
-    if source is None:source=fetch_invoices(context,branch,day)
-    # Revalidate cached HTML for this exact store/day before formatting it.
+def invoice_excerpt(source,branch,day):
+    # Validate every invoice field before slow BI collection as well as before export.
     invoice_total(source,branch.title,day,INVOICE_SUPPLIERS)
     doc=Report();doc.feed(source)
     matches=[]
@@ -95,7 +94,12 @@ def capture_invoices(context,branch,day,destination,source=None):
             totals=source_totals(table,i+1,columns,data)
             matches.append((data[-1] if data else None,columns,totals))
     if len(matches)!=1:raise StructureError('Invoice excerpt table missing')
-    last,cols,totals=matches[0]
+    return matches[0]
+
+
+def capture_invoices(context,branch,day,destination,source=None):
+    if source is None:source=fetch_invoices(context,branch,day)
+    last,cols,totals=invoice_excerpt(source,branch,day)
     def money(v):return format(v,',.2f').replace(',',' ').replace('.',',')
     headings=['Подразделение получения товара','Контрагент','Сумма без НДС','Сумма НДС','Сумма с НДС']
     values=[branch.title,last[cols[2]],*[last[c] for c in cols[-3:]]] if last else [branch.title,'Нет накладных','','','']

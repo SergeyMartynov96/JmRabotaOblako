@@ -407,9 +407,9 @@ class InvoicePreflightCache(unittest.TestCase):
         from telegram_reports.invoices import fetch_invoices
         from daily_metrics.config import BRANCHES,INVOICE_SUPPLIERS
         ctx=Mock();branch=BRANCHES[0];day=dt.date(2026,11,21)
-        with patch('telegram_reports.invoices.invoice_source',return_value='html') as source,patch('telegram_reports.invoices.invoice_total') as validate:
+        with patch('telegram_reports.invoices.invoice_source',return_value='html') as source,patch('telegram_reports.invoices.invoice_excerpt') as validate:
             self.assertEqual(fetch_invoices(ctx,branch,day),'html')
-            validate.assert_called_once_with('html',branch.title,day,INVOICE_SUPPLIERS)
+            validate.assert_called_once_with('html',branch,day)
             params=urllib.parse.parse_qs(urllib.parse.urlsplit(source.call_args.args[1]).query)
         self.assertEqual(params['Waybill[insert_date_from]'],['21.11.2026'])
         self.assertEqual(params['Waybill[insert_date_to]'],['21.11.2026'])
