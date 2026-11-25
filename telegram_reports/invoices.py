@@ -1,5 +1,5 @@
 """Validated invoice excerpt: last supplier, receiving branch, three exact totals."""
-import html,json,urllib.parse,urllib.request,urllib.error,http.cookiejar,ssl,time
+import html,json,re,urllib.parse,urllib.request,urllib.error,http.cookiejar,ssl,time
 from decimal import Decimal
 from daily_metrics.config import INVOICE_SUPPLIERS
 from daily_metrics.extended_core import invoice_total
@@ -57,6 +57,16 @@ def fetch_invoices(context,branch,day):
 ROUNDING_TOLERANCE=Decimal('1.00')
 
 
+def footer_amount(raw):
+    # SU groups footer thousands with commas, while body amounts are ungrouped.
+    compact=re.sub(r'[\s₽]', '', str(raw))
+    if re.fullmatch(r'[+-]?\d{1,3}(?:,\d{3})+\.\d{1,2}',compact):
+        compact=compact.replace(',','')
+    elif re.fullmatch(r'[+-]?\d{1,3}(?:\.\d{3})+,\d{1,2}',compact):
+        compact=compact.replace('.','')
+    return number(compact)
+
+
 def source_totals(table,start,columns,data):
     """Preserve SU's footer; validate its billed total with ruble rounding tolerance."""
     sums=[sum((number(r[c]) for r in data),Decimal(0)) for c in columns[-3:]]
@@ -65,7 +75,7 @@ def source_totals(table,start,columns,data):
         if len(row)<=max(columns):continue
         if row[columns[0]].strip() or row[columns[1]].strip() or row[columns[2]].strip():continue
         if not all(row[c].strip() for c in columns[-3:]):continue
-        footers.append([number(row[c]) for c in columns[-3:]])
+        footers.append([footer_amount(row[c]) for c in columns[-3:]])
     if len(footers)>1:raise StructureError('Invoice source footer ambiguous')
     totals=footers[0] if footers else sums
     if footers and abs(sums[2]-totals[2])>ROUNDING_TOLERANCE:

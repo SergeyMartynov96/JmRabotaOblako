@@ -37,7 +37,7 @@ class InvoiceRounding(unittest.TestCase):
         headers=['Дата и время приема товара','Подразделение','Подразделение получения товара','Контрагент','Сумма без НДС','Сумма НДС','Сумма с НДС']
         def source(receiver):
             row=['24.11.2026 07:00',branch.title,receiver,supplier,'71622.70','5963.87','77660.07']
-            footer=['','','','','71622.70','5963.87','77660.07']
+            footer=['','','','','71,622.70','5,963.87','77,660.07']
             return '<table><tr>'+''.join('<th>'+v+'</th>' for v in headers)+'</tr>'+''.join('<tr>'+''.join('<td>'+v+'</td>' for v in r)+'</tr>' for r in (row,footer))+'</table>'
         context=Mock()
         capture_invoices(context,branch,dt.date(2026,11,24),'image.png',source=source(branch.title))
@@ -47,3 +47,8 @@ class InvoiceRounding(unittest.TestCase):
         wrong=Mock()
         with self.assertRaises(StructureError):capture_invoices(wrong,branch,dt.date(2026,11,24),'image.png',source=source('other store'))
         wrong.new_page.assert_not_called()
+
+    def test_grouped_su_footer_and_localized_money_formats(self):
+        from telegram_reports.invoices import footer_amount
+        for raw in ('77,660.07','77 660,07','77.660,07','77660.07'):
+            self.assertEqual(footer_amount(raw),Decimal('77660.07'))
