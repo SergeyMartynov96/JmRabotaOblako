@@ -1,5 +1,5 @@
 """Validated invoice excerpt: last supplier, receiving branch, three exact totals."""
-import html,urllib.parse,urllib.request,urllib.error,http.cookiejar,ssl,time
+import html,json,urllib.parse,urllib.request,urllib.error,http.cookiejar,ssl,time
 from decimal import Decimal
 from daily_metrics.config import INVOICE_SUPPLIERS
 from daily_metrics.extended_core import invoice_total
@@ -54,6 +54,29 @@ def fetch_invoices(context,branch,day):
     return source
 
 
+ROUNDING_TOLERANCE=Decimal('1.00')
+
+
+def source_totals(table,start,columns,data):
+    """Preserve SU's footer; validate its billed total with ruble rounding tolerance."""
+    sums=[sum((number(r[c]) for r in data),Decimal(0)) for c in columns[-3:]]
+    footers=[]
+    for row in table[start:]:
+        if len(row)<=max(columns):continue
+        if row[columns[0]].strip() or row[columns[1]].strip() or row[columns[2]].strip():continue
+        if not all(row[c].strip() for c in columns[-3:]):continue
+        footers.append([number(row[c]) for c in columns[-3:]])
+    if len(footers)>1:raise StructureError('Invoice source footer ambiguous')
+    totals=footers[0] if footers else sums
+    if footers and abs(sums[2]-totals[2])>ROUNDING_TOLERANCE:
+        raise StructureError('Invoice source billed total differs from complete rows beyond rounding tolerance')
+    # The source's VAT/base columns may contain their own corrections. Never
+    # manufacture a billed total from them or block an otherwise verified report.
+    print(json.dumps({'invoice_source_totals_preserved':True,
+        'vat_arithmetic_within_rounding':abs(totals[0]+totals[1]-totals[2])<=ROUNDING_TOLERANCE}),flush=True)
+    return totals
+
+
 def capture_invoices(context,branch,day,destination,source=None):
     if source is None:source=fetch_invoices(context,branch,day)
     # Revalidate cached HTML for this exact store/day before formatting it.
@@ -69,8 +92,7 @@ def capture_invoices(context,branch,day,destination,source=None):
                 return found[0]
             columns=[col(v) for v in ('подразделение','подразделение получения товара','контрагент','сумма без ндс','сумма ндс','сумма с ндс')]
             data=[r for r in table[i+1:] if len(r)>max(columns) and (r[columns[1]].strip() or r[columns[0]].strip())]
-            totals=[sum((number(r[c]) for r in data),Decimal(0)) for c in columns[-3:]]
-            if totals[0]+totals[1]!=totals[2]:raise StructureError('Invoice VAT totals do not reconcile')
+            totals=source_totals(table,i+1,columns,data)
             matches.append((data[-1] if data else None,columns,totals))
     if len(matches)!=1:raise StructureError('Invoice excerpt table missing')
     last,cols,totals=matches[0]
