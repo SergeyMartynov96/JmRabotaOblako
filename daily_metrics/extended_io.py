@@ -130,19 +130,35 @@ class BIReports:
             self._auth_error=exc
             context.close();raise
 
+    def _load_su_login_form(self,page,deadline):
+        """Retry one incomplete native GET before any credentials are submitted."""
+        from playwright.sync_api import TimeoutError as BrowserTimeout
+        def remaining():return max(1,int((deadline-time.monotonic())*1000))
+        for attempt in range(2):
+            page.bring_to_front()
+            response=(page.goto(SU+'/site/login',wait_until='commit',timeout=remaining()) if attempt==0
+                      else page.reload(wait_until='commit',timeout=remaining()))
+            if response is None or response.status!=200:
+                raise StructureError('SU login page HTTP '+str(response.status if response else 0))
+            location=urllib.parse.urlsplit(page.url)
+            if location.scheme!='https' or location.hostname!='su.lifemart.ru' or location.path!='/site/login':
+                raise StructureError('Unexpected SU login location')
+            print('BI: SU login document received',flush=True)
+            try:
+                page.wait_for_function("""() => !!document.querySelector('input[name="LoginForm[username]"]') && !!document.querySelector('input[name="LoginForm[password]"]')""",
+                    timeout=min(60000,remaining()) if attempt==0 else remaining())
+                return
+            except BrowserTimeout:
+                if attempt or time.monotonic()>=deadline:raise
+                print('BI: reloading an incomplete SU sign-in document within the same window',flush=True)
+
     def _browser_login(self,page):
         username=os.getenv('LIFEMART_LOGIN');password=os.getenv('LIFEMART_PASSWORD')
         if not (username and password):raise StructureError('SU credentials must be configured in GitHub Actions Secrets')
         print('BI: signing into SU in Chrome',flush=True)
         deadline=time.monotonic()+180
         def remaining():return max(1,int((deadline-time.monotonic())*1000))
-        response=page.goto(SU+'/site/login',wait_until='commit',timeout=remaining())
-        if response is None or response.status!=200:
-            raise StructureError('SU login page HTTP '+str(response.status if response else 0))
-        print('BI: SU login document received',flush=True)
-        location=urllib.parse.urlsplit(page.url)
-        if location.hostname!='su.lifemart.ru' or location.path!='/site/login':
-            raise StructureError('Unexpected SU login location')
+        self._load_su_login_form(page,deadline)
         page.locator('input[name="LoginForm[username]"]').fill(username,timeout=remaining())
         password_field=page.locator('input[name="LoginForm[password]"]')
         password_field.fill(password,timeout=remaining())
