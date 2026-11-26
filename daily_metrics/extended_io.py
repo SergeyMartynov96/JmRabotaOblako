@@ -124,6 +124,8 @@ class BIReports:
                 raise
             finally:
                 page.close();context.unroute('**/*',session_documents)
+            adopt=getattr(self.client,'adopt_browser_session',None)
+            if callable(adopt):adopt(context,verified=bool(self.csrf))
             self.context=context
             print('BI: session authenticated',flush=True)
         except Exception as exc:

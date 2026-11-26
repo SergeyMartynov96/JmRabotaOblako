@@ -130,6 +130,25 @@ class SUReports:
         except Exception as exc:
             self._login_error=exc
             raise
+    def adopt_browser_session(self,context,*,verified=False):
+        """Reuse only the same account's server-verified SU browser cookies in memory."""
+        if not verified:raise StructureError('Unverified browser session cannot authorize SU reports')
+        cookies=context.cookies(SU)
+        if not cookies:raise StructureError('Verified browser has no SU session cookies')
+        jar=http.cookiejar.CookieJar()
+        for c in cookies:
+            expiry=c.get('expires',-1)
+            expiry=int(expiry) if expiry is not None and expiry>0 else None
+            jar.set_cookie(http.cookiejar.Cookie(0,c['name'],c['value'],None,False,
+                c['domain'],c['domain'].startswith('.'),c['domain'].startswith('.'),
+                c.get('path','/'),True,c.get('secure',False),expiry,expiry is None,None,None,{},False))
+        handlers=[h for h in self.opener.handlers if hasattr(h,'cookiejar')]
+        if len(handlers)!=1:raise StructureError('SU cookie transport unavailable')
+        handlers[0].cookiejar=jar
+        self._authenticated=True;self._login_error=None
+        if hasattr(self,'login_deadline'):self.login_deadline=None
+        print('SU: HTTP reports reuse the verified browser session',flush=True)
+
     def revenue(self,branch,day):
         # One report with all three selected stores, matching the owner's manual workflow.
         # A failed request is not repeated for each branch in this same run.
