@@ -2,7 +2,7 @@ name: LifeMart Telegram 09:00 timer
 on:
   workflow_run:
     workflows: [LifeMart daily metrics]
-    types: [requested]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
     inputs:

@@ -12,3 +12,9 @@ class CompletedMetricsGate(unittest.TestCase):
         workflow=Path('.github/workflows/daily-metrics.yml').read_text()
         self.assertLess(workflow.index('pip install -r requirements-test.txt'),workflow.index('python3 -m unittest'))
         self.assertLess(workflow.index('python3 -m unittest'),workflow.index('Read or fill yesterday metrics'))
+
+    def test_automatic_timer_is_triggered_by_completion_not_request(self):
+        from pathlib import Path
+        workflow=Path('.github/workflows/telegram-report-timer.yml').read_text()
+        self.assertIn('types: [completed]',workflow)
+        self.assertNotIn('types: [requested]',workflow)

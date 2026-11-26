@@ -53,9 +53,11 @@ def main():
     if args.verify:dispatch('verify');return
     event=json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
     if args.arm_morning:event=canonical_event(os.getenv('PARENT_RUN',''))
-    elif event.get('action')=='requested':event=canonical_event(event.get('workflow_run',{}).get('id',''))
+    elif event.get('action') in ('requested','completed'):event=canonical_event(event.get('workflow_run',{}).get('id',''))
     target=due_time(event,dt.datetime.now(TZ),os.environ['GITHUB_REPOSITORY'])
     if target is None:print('{"timer_skipped":"not_the_external_morning_run"}',flush=True);return
+    if event['workflow_run'].get('status')=='completed' and not metrics_ready(event['workflow_run']):
+        print('{"timer_skipped":"metrics_not_successful"}',flush=True);return
     print('Report dispatch armed for 09:00 Asia/Yekaterinburg',flush=True)
     while True:
         remaining=(target-dt.datetime.now(TZ)).total_seconds()
