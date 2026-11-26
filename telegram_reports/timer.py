@@ -43,6 +43,10 @@ def canonical_event(run_id):
     return {'action':'requested','workflow_run':run}
 
 
+def metrics_ready(run):
+    return run.get('status')=='completed' and run.get('conclusion')=='success'
+
+
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--verify',action='store_true');parser.add_argument('--arm-morning',action='store_true');args=parser.parse_args()
     if os.getenv('GITHUB_ACTIONS')!='true':raise ValueError('Actions only')
@@ -57,7 +61,13 @@ def main():
         remaining=(target-dt.datetime.now(TZ)).total_seconds()
         if remaining<=0:break
         time.sleep(min(20,remaining))
+    # Read completion again at dispatch time; the 08:00 requested event alone
+    # is never proof that the tables were filled.
+    event=canonical_event(event['workflow_run']['id'])
     due_time(event,dt.datetime.now(TZ),os.environ['GITHUB_REPOSITORY'])
+    if not metrics_ready(event['workflow_run']):
+        print(json.dumps({'timer_skipped':'metrics_not_successful','parent_status':event['workflow_run'].get('status'),'parent_conclusion':event['workflow_run'].get('conclusion')}),flush=True)
+        return
     dispatch('deliver')
 
 if __name__=='__main__':main()
