@@ -30,8 +30,10 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+      - name: Install pinned test and runtime dependencies
+        run: python3 -m pip install -r requirements-test.txt
       - name: Validate metrics rules
-        run: python3 -m unittest discover -s tests -p 'test*metrics.py' -v
+        run: python3 -m unittest discover -s tests -v
       - name: Resolve original run date
         env:
           GH_TOKEN: ${{ github.token }}
@@ -49,7 +51,6 @@ jobs:
           PY
       - name: Install browser runtime
         run: |
-          python3 -m pip install playwright==1.62.0
           if ! command -v google-chrome >/dev/null; then
             python3 -m playwright install --with-deps chromium
           fi
