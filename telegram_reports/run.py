@@ -15,7 +15,7 @@ from .catalog import ReportCharts,CHARTS
 from .session import ReportSUReports,report_bi
 from .core import weekly_period,OSA_METRICS
 from .render import capture_chart,compose,active_page
-from .sheets import capture_week
+from .sheets import capture_week,preflight_week
 from .invoices import capture_invoices,fetch_invoices
 from .security import seal_images,seal_tree,arm_failed_cleanup,auth_snapshot
 from .transport import BotClient,BotError,decrypt_recipient,send_album
@@ -84,7 +84,7 @@ def assemble(browser,bi,branch,day,folder,panels,audit,osa,*,invoice_html=None,s
             from daily_metrics.extended_run import sync_report_reasons
             summary=sync_report_reasons(browser,branch,day,audit['reasons']['payload'])
             print(json.dumps({'branch':branch.name,'reason_cells_refreshed':summary['written']}),flush=True)
-        capture_week(bi.context,branch,day,images[0])
+        capture_week(bi.context,branch,day,images[0],require_complete=sync_reason_cells)
     with assembly_stage(branch,folder,'invoices'):
         capture_invoices(bi.context,branch,day,images[1],source=invoice_html)
     with assembly_stage(branch,folder,'compose'):
@@ -199,6 +199,10 @@ def main():
                         # HTTP reads only: do not open or switch browser pages here.
                         invoice_sources[branch.department]=fetch_invoices(bi.context,branch,day)
                         print(json.dumps({'branch':branch.name,'invoice_source_validated':True}),flush=True)
+                    if args.operation=='deliver':
+                        for branch in branches:
+                            preflight_week(branch,day)
+                            print(json.dumps({'branch':branch.name,'summary_ready':True}),flush=True)
                     captured=[]
                     for branch in branches:
                         folder=root/str(branch.department)

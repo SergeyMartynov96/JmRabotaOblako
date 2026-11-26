@@ -60,7 +60,7 @@ class ReportSnapshotSync(unittest.TestCase):
         branch=SimpleNamespace(name='М42');payload={'validated':'same object'}
         for deliver in (False,True):
             events=[]
-            with tempfile.TemporaryDirectory() as directory,patch('daily_metrics.extended_run.sync_report_reasons',side_effect=lambda *a:events.append('sync') or {'written':3}) as sync,patch('telegram_reports.run.capture_week',side_effect=lambda *a:events.append('export')),patch('telegram_reports.run.capture_invoices'),patch('telegram_reports.run.compose'):
+            with tempfile.TemporaryDirectory() as directory,patch('daily_metrics.extended_run.sync_report_reasons',side_effect=lambda *a:events.append('sync') or {'written':3}) as sync,patch('telegram_reports.run.capture_week',side_effect=lambda *a,**k:events.append('export')),patch('telegram_reports.run.capture_invoices'),patch('telegram_reports.run.compose'):
                 root=Path(directory);panels={k:(k,root/'source.png') for k in kinds}
                 assemble(Mock(),Mock(),branch,dt.date(2026,11,23),root,panels,{'reasons':{'payload':payload}},[Decimal(1),Decimal(2)],sync_reason_cells=deliver)
                 self.assertEqual(events,['sync','export'] if deliver else ['export'])

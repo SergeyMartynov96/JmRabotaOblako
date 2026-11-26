@@ -4,12 +4,37 @@ from pathlib import Path
 from PIL import ImageChops
 import pypdfium2 as pdfium
 from daily_metrics.io import csv_sheet,native_cell,get
-from daily_metrics.core import target_candidates,a1,StructureError
+from daily_metrics.core import target_candidates,a1,StructureError,lower_targets,value,number,DASH
 from daily_metrics.extended_core import extra_targets
 from .http import report_get
 
 
-def capture_week(context,branch,day,destination):
+def assert_summary_complete(rows,row,header,day):
+    layout=extra_targets(rows,header,row,day)
+    lower_revenue,lower_writeoff=lower_targets(rows,header,day)
+    required={'revenue':(row,2),'writeoff':(row,3),'top_food':(row,6),
+              'top_dessert':(row,7),'top_japan':(row,8),'procurement':(row,12),
+              'uv':layout['uv'],'osa':layout['osa'],'invoices':layout['invoices'],
+              'weekly_revenue':lower_revenue,'writeoff_percent':lower_writeoff}
+    missing=[]
+    for name,(r,c) in required.items():
+        raw=value(rows,r,c)
+        if raw==DASH:continue  # Explicit source absence follows the owner's existing rule.
+        try:number(raw)
+        except StructureError:missing.append(name)
+    if missing:raise StructureError('Summary metrics not ready: '+','.join(missing))
+
+
+def preflight_week(branch,day):
+    rows=csv_sheet(branch.book,branch.revenue_gid)
+    expected=f'Date({day.year},{day.month-1},{day.day})'
+    found=[(r,h) for r,h in target_candidates(rows,day,branch.newest_first)
+           if native_cell(branch.book,branch.revenue_gid,a1(r,0))==('date',expected)]
+    if len(found)!=1:raise StructureError('Report week must have one full-year date match')
+    assert_summary_complete(rows,*found[0],day)
+
+
+def capture_week(context,branch,day,destination,*,require_complete=False):
     rows=csv_sheet(branch.book,branch.revenue_gid)
     candidates=[]
     expected=f'Date({day.year},{day.month-1},{day.day})'
@@ -18,6 +43,7 @@ def capture_week(context,branch,day,destination):
         if kind=='date' and raw==expected:candidates.append((row,header))
     if len(candidates)!=1:raise StructureError('Report week must have one full-year date match')
     row,header=candidates[0]
+    if require_complete:assert_summary_complete(rows,row,header,day)
     layout=extra_targets(rows,header,row,day)
     last=max(r for r,c in layout['date_anchors'])+7-day.weekday()
     width=max([len([c for c in rows[header] if c])]+[c+1 for targets in layout['reasons'].values() for r,c in targets])
