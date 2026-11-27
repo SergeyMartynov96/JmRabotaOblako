@@ -16,12 +16,12 @@ class Cycle(unittest.TestCase):
         self.assertEqual(run.valid_day('2026-11-27T11:00:00Z',dt.datetime(2026,11,27,11,tzinfo=dt.timezone.utc),'suppliers'),dt.date(2026,11,27))
     def test_failed_morning_blocks_reports(self):
         row={'display_title':'LifeMart cycle morning','created_at':'2026-11-27T02:00:00Z','id':7,'status':'completed','conclusion':'failure'}
-        with patch.object(run,'api',return_value={'workflow_runs':[row]}),patch.object(run,'checked_wait') as wait:
+        with patch.object(run,'completed_cycle',return_value=False),patch.object(run,'api',return_value={'workflow_runs':[row]}),patch.object(run,'checked_wait') as wait:
             with self.assertRaises(RuntimeError):run.morning_dependency(dt.date(2026,11,27))
             wait.assert_not_called()
     def test_latest_recovery_success_allows_reports(self):
         rows=[{'display_title':'LifeMart cycle morning','created_at':'2026-11-27T02:00:00Z','id':n,'status':'completed','conclusion':c} for n,c in [(1,'failure'),(2,'success')]]
-        with patch.object(run,'api',return_value={'workflow_runs':rows}):run.morning_dependency(dt.date(2026,11,27))
+        with patch.object(run,'completed_cycle',return_value=True):run.morning_dependency(dt.date(2026,11,27))
     def test_uncertain_send_not_retried(self):
         from telegram_reports.transport import BotError
         import tempfile,os
@@ -44,7 +44,7 @@ class Cycle(unittest.TestCase):
         own={'id':99,'created_at':'2026-11-27T11:00:00Z'}
         failed={'id':2,'conclusion':'failure','html_url':'https://github.com/a/b/actions/runs/2'}
         now=dt.datetime(2026,11,27,17,tzinfo=dt.timezone.utc)
-        with patch.dict(os.environ,{'GITHUB_ACTIONS':'true','GITHUB_RUN_ID':'99','GITHUB_REPOSITORY':'a/b'}),patch('sys.argv',['run','--stage','suppliers']),patch.object(run,'api',side_effect=[own,{'workflow_runs':[]}]),patch.object(run,'valid_day',return_value=dt.date(2026,11,27)),patch.object(run,'child',return_value=failed) as child,patch.object(run,'notify') as notify,patch('subprocess.run') as logs:
+        with patch.dict(os.environ,{'GITHUB_ACTIONS':'true','GITHUB_RUN_ID':'99','GITHUB_REPOSITORY':'a/b'}),patch('sys.argv',['run','--stage','suppliers']),patch.object(run,'api',return_value=own),patch.object(run,'completed_cycle',return_value=False),patch.object(run,'valid_day',return_value=dt.date(2026,11,27)),patch.object(run,'child',return_value=failed) as child,patch.object(run,'notify') as notify,patch('subprocess.run') as logs:
             logs.return_value.returncode=1
             with self.assertRaises(SystemExit):run.main()
             self.assertEqual(child.call_count,1);self.assertEqual(notify.call_count,1)
@@ -53,10 +53,22 @@ class Cycle(unittest.TestCase):
         import os
         from telegram_reports.transport import BotError
         own={'id':99,'created_at':'2026-11-27T11:00:00Z'}
-        with patch.dict(os.environ,{'GITHUB_ACTIONS':'true','GITHUB_RUN_ID':'99','GITHUB_REPOSITORY':'a/b'}),patch('sys.argv',['run','--stage','suppliers']),patch.object(run,'api',side_effect=[own,{'workflow_runs':[]}]),patch.object(run,'valid_day',return_value=dt.date(2026,11,27)),patch.object(run,'child',return_value={'conclusion':'success'}),patch.object(run,'notify',side_effect=BotError('unknown')) as notify:
+        with patch.dict(os.environ,{'GITHUB_ACTIONS':'true','GITHUB_RUN_ID':'99','GITHUB_REPOSITORY':'a/b'}),patch('sys.argv',['run','--stage','suppliers']),patch.object(run,'api',return_value=own),patch.object(run,'completed_cycle',return_value=False),patch.object(run,'valid_day',return_value=dt.date(2026,11,27)),patch.object(run,'child',return_value={'conclusion':'success'}),patch.object(run,'notify',side_effect=BotError('unknown')) as notify:
             with self.assertRaises(BotError):run.main()
             self.assertEqual(notify.call_count,1)
     def test_failure_location_never_forwards_raw_details(self):
         import json
         log='prefix '+json.dumps({'errors':['АВ12: reasons source failed (TimeoutError) secret=123','М42: uv source failed (ConnectionError) 345.67','unknown user money=8877']},ensure_ascii=False)
         self.assertEqual(run.failure_location(log),'АВ12 — причины списаний; М42 — упущенная выручка')
+    def test_dry_run_cannot_satisfy_business_completion(self):
+        artifact={'name':'daily-cycle-complete-2026-11-27-morning','expired':False,'workflow_run':{'id':7}}
+        row={'status':'completed','conclusion':'success','path':'.github/workflows/daily-cycle.yml','head_branch':'main','display_title':'LifeMart cycle morning (verify)','created_at':'2026-11-27T02:00:00Z'}
+        with patch.object(run,'api',side_effect=[{'artifacts':[artifact]},row]):self.assertFalse(run.completed_cycle(dt.date(2026,11,27),'morning'))
+        row['display_title']='LifeMart cycle morning'
+        with patch.object(run,'api',side_effect=[{'artifacts':[artifact]},row]):self.assertTrue(run.completed_cycle(dt.date(2026,11,27),'morning'))
+        with patch.object(run,'api',return_value={'artifacts':[]}):self.assertFalse(run.completed_cycle(dt.date(2026,11,27),'morning'))
+    def test_all_five_tables_are_checked_before_delivery(self):
+        with patch('telegram_reports.sheets.preflight_week') as original,patch('xk_reports.sheets.preflight') as added:
+            run.report_preflight(dt.date(2026,11,27))
+            self.assertEqual(original.call_count,3);self.assertEqual(added.call_count,2)
+            for c in original.call_args_list+added.call_args_list:self.assertEqual(c.args[1],dt.date(2026,11,26))

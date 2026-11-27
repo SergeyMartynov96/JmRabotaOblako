@@ -58,18 +58,43 @@ def child(file,inputs,tag,day):
     raise RuntimeError('Child workflow deadline exceeded')
 
 
+def completed_cycle(day,stage):
+    name=f'daily-cycle-complete-{day}-{stage}'
+    for page in range(1,6):
+        artifacts=api(f'/actions/artifacts?per_page=100&page={page}')['artifacts']
+        for artifact in artifacts:
+            if artifact['name']!=name or artifact.get('expired'):continue
+            run=api('/actions/runs/'+str(artifact['workflow_run']['id']))
+            if (run.get('status')=='completed' and run.get('conclusion')=='success'
+                and run.get('path')=='.github/workflows/daily-cycle.yml' and run.get('head_branch')=='main'
+                and run.get('display_title')=='LifeMart cycle '+stage
+                and dt.datetime.fromisoformat(run['created_at'].replace('Z','+00:00')).astimezone(TZ).date()==day):return True
+        if len(artifacts)<100:break
+    return False
+
+
 def morning_dependency(day):
     deadline=time.monotonic()+60*60
     while time.monotonic()<deadline:
+        if completed_cycle(day,'morning'):return
         runs=api('/actions/workflows/daily-cycle.yml/runs?branch=main&per_page=100')['workflow_runs']
         matches=[r for r in runs if r.get('display_title')=='LifeMart cycle morning' and dt.datetime.fromisoformat(r['created_at'].replace('Z','+00:00')).astimezone(TZ).date()==day]
         if matches:
             run=max(matches,key=lambda r:r['id'])
-            if run['status']=='completed':
-                if run['conclusion']=='success':return
+            if run['status']=='completed' and run['conclusion']!='success':
                 raise RuntimeError('Morning tables were not completed successfully')
         checked_wait(day)
     raise RuntimeError('Morning tables were not confirmed before report deadline')
+
+
+def report_preflight(day):
+    from daily_metrics.config import BRANCHES
+    from telegram_reports.sheets import preflight_week
+    from xk_metrics.config import STORES
+    from xk_reports.sheets import preflight
+    yesterday=day-dt.timedelta(days=1)
+    for branch in BRANCHES:preflight_week(branch,yesterday)
+    for store in STORES.values():preflight(store,yesterday)
 
 
 
@@ -110,12 +135,13 @@ def main():
     if args.verify:
         print(json.dumps({'stage':stage,'children':[x[0] for x in STEPS[stage]],'messages_sent':0,'writes':0}));return
     # One completed cycle per business stage/day. A failed cycle can be manually resumed.
-    prior=api('/actions/workflows/daily-cycle.yml/runs?branch=main&status=success&per_page=100')['workflow_runs']
-    if any(r['id']!=own['id'] and r.get('display_title')=='LifeMart cycle '+stage and dt.datetime.fromisoformat(r['created_at'].replace('Z','+00:00')).astimezone(TZ).date()==day for r in prior):
+    if completed_cycle(day,stage):
         print('{"cycle_skipped":"already_complete"}');return
     done=[];current='проверка готовности';failure=None
     try:
-        if stage=='reports':morning_dependency(day)
+        if stage=='reports':
+            morning_dependency(day)
+            report_preflight(day)
         for file,label,inputs in STEPS[stage]:
             current=label;run=child(file,inputs,str(own['id']),day)
             if run['conclusion']!='success':
@@ -133,6 +159,7 @@ def main():
                  'Morning tables were not confirmed before report deadline':'Нет подтверждения заполнения всех таблиц. Отправка отчётов остановлена.'}.get(str(exc),'Не удалось подтвердить завершение этапа ('+type(exc).__name__+'). Требуется проверка запуска.')
     if failure is None:
         notify('✅ LifeMart: всё выполнено\n'+LABELS[stage]+'\n'+('Таблицы заполнены и проверены.' if stage=='morning' else 'Отчёты отправлены.' if stage=='reports' else 'Цифры поставщиков перенесены и проверены.'),stage,day)
+        Path('cycle-complete.json').write_text(json.dumps({'day':str(day),'stage':stage,'status':'complete','run':own['id']}))
         return
     notify('⚠️ LifeMart: запуск не завершён\n'+LABELS[stage]+'\nОстановились: '+current+'\nУспешно: '+(', '.join(done) or 'нет завершённых этапов')+'\n'+failure+'\nОбщий запуск: https://github.com/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/'+str(own['id']),stage,day)
     raise SystemExit(1)

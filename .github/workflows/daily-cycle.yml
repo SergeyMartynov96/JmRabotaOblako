@@ -1,5 +1,5 @@
 name: LifeMart three daily cycles
-run-name: LifeMart cycle ${{ inputs.stage || (github.event.schedule == '0 2 * * *' && 'morning' || github.event.schedule == '0 3 * * *' && 'reports' || 'suppliers') }}
+run-name: LifeMart cycle ${{ inputs.stage || (github.event.schedule == '0 2 * * *' && 'morning' || github.event.schedule == '0 3 * * *' && 'reports' || 'suppliers') }}${{ inputs.operation == 'verify' && ' (verify)' || '' }}
 on:
   schedule:
     - cron: '0 2 * * *' # 07:00 Екатеринбург
@@ -34,6 +34,9 @@ jobs:
           persist-credentials: false
       - run: python3 -m pip install -r requirements-test.txt
       - run: python3 -m unittest discover -s tests -q
+      - name: Record local business date
+        id: day
+        run: echo "date=$(TZ=Asia/Yekaterinburg date +%F)" >> "$GITHUB_OUTPUT"
       - name: Coordinate business stage and send one private result
         env:
           STAGE: ${{ inputs.stage || (github.event.schedule == '0 2 * * *' && 'morning' || github.event.schedule == '0 3 * * *' && 'reports' || 'suppliers') }}
@@ -50,4 +53,11 @@ jobs:
         with:
           name: daily-cycle-status-${{ github.run_id }}
           path: cycle-receipt.json
+          retention-days: 14
+      - name: Preserve completed business stage
+        if: success() && hashFiles('cycle-complete.json') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: daily-cycle-complete-${{ steps.day.outputs.date }}-${{ inputs.stage || (github.event.schedule == '0 2 * * *' && 'morning' || github.event.schedule == '0 3 * * *' && 'reports' || 'suppliers') }}
+          path: cycle-complete.json
           retention-days: 14
