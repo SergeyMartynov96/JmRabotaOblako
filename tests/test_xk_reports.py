@@ -10,7 +10,7 @@ class Reports(unittest.TestCase):
             self.assertEqual(caption(store.branch),name.lower()+'\nобщая таблица\nсписания по десертам\nсписания по позициям\nув по позициям')
     def test_disjoint_store_crops(self):
         a=export_bounds(STORES['Х76'],2027,2038);b=export_bounds(STORES['К44'],2027,2038)
-        self.assertEqual((a['c1'],a['c2']),(1,25));self.assertEqual((b['c1'],b['c2']),(26,50))
+        self.assertEqual((a['c1'],a['c2']),(1,20));self.assertEqual((b['c1'],b['c2']),(26,45))
         self.assertLessEqual(a['c2'],b['c1']);self.assertEqual((a['r1'],a['r2']),(2026,2047))
     def test_daily_tops_weekly_ui2_and_uv(self):
         import tempfile
