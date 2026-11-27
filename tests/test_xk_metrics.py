@@ -8,6 +8,15 @@ from xk_metrics.sources import read_tops
 from daily_metrics.core import StructureError
 
 class SeparateStoreMetrics(unittest.TestCase):
+    def test_source_store_requires_the_verified_full_title(self):
+        from unittest.mock import MagicMock
+        from xk_metrics.sources import resolve_branch
+        doc=MagicMock();doc.tables=[('ЖМ Тюмень Харьковская 77',[])]
+        with patch('xk_metrics.sources.Report',return_value=doc):
+            with self.assertRaises(StructureError):resolve_branch(MagicMock(),STORES['Х76'],dt.date(2026,11,26))
+            doc.tables=[(STORES['Х76'].branch.title,[])]
+            self.assertEqual(resolve_branch(MagicMock(),STORES['Х76'],dt.date(2026,11,26)).department,401)
+
     def test_forbidden_http_response_is_never_retried(self):
         from urllib.error import HTTPError
         from xk_metrics.run import main

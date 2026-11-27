@@ -4,7 +4,7 @@ import urllib.parse
 from decimal import Decimal
 from daily_metrics.session import ReportSUReports
 from daily_metrics.io import REVENUE,csv_sheet
-from daily_metrics.core import Report,StructureError,DASH,value,date_matches,number
+from daily_metrics.core import Report,StructureError,DASH,value,date_matches,number,text
 from daily_metrics.extended_io import ExtraSources,CHARTS
 from daily_metrics.extended_core import daily_query,bi_percent,bi_rows,key,percentage_points
 
@@ -20,8 +20,7 @@ class Client(ReportSUReports):
 
 def resolve_branch(client,store,day):
     doc=Report();doc.feed(client.revenue(store.branch,day))
-    tokens=('харьков',) if store.branch.name=='Х76' else ('атриум','куйбыш')
-    titles={heading.strip() for heading,rows in doc.tables if any(t in heading.casefold() for t in tokens)}
+    titles={heading.strip() for heading,rows in doc.tables if text(heading)==text(store.branch.title)}
     if len(titles)!=1:raise StructureError('Requested store revenue title missing or ambiguous')
     title=titles.pop()
     print(store.branch.name+': verified source store title='+title,flush=True)
