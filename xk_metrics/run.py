@@ -57,9 +57,9 @@ def plan(sheet,store,branch,client,sources,day):
     for name,cell in reasons.items():
         amount=reported.get(name)
         if amount is None:continue
-        rounded=Decimal(str(amount)).quantize(Decimal('0.1'))
-        if rounded==0:continue
-        result.append((cell,percent_literal(amount,'М42',1)))  # These native reason cells use percent format.
+        literal=percent_literal(amount,'М42',1)  # Native reason cells use percent format.
+        if number(literal)==0:continue
+        result.append((cell,literal))
     for offset in (1,2):
         future=day+dt.timedelta(days=offset)
         found=candidates(rows,store,future)

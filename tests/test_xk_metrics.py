@@ -8,6 +8,20 @@ from xk_metrics.sources import read_tops
 from daily_metrics.core import StructureError
 
 class SeparateStoreMetrics(unittest.TestCase):
+    def test_forbidden_http_response_is_never_retried(self):
+        from urllib.error import HTTPError
+        from xk_metrics.run import main
+        with patch('sys.argv',['x76','--operation','preview']),patch('xk_metrics.run.execute',side_effect=HTTPError('https://su.lifemart.ru',403,'Forbidden',{},None)) as execute:
+            with self.assertRaises(HTTPError):main('Х76')
+        self.assertEqual(execute.call_count,1)
+
+    def test_transient_failure_retries_only_the_selected_store(self):
+        from xk_metrics.run import main
+        with patch('sys.argv',['k44','--operation','preview']),patch('xk_metrics.run.execute',side_effect=[TimeoutError(),None]) as execute:
+            main('К44')
+        self.assertEqual(execute.call_count,2)
+        self.assertTrue(all(call.args[0].branch.name=='К44' for call in execute.call_args_list))
+
     def rows(self):
         rows=[['']*48 for _ in range(25)]
         for store in STORES.values():
