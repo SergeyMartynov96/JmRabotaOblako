@@ -1,0 +1,53 @@
+name: LifeMart К44 morning metrics 07:00
+run-name: К44 morning metrics (${{ inputs.operation || 'apply' }})
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [preview, apply]
+        default: preview
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: lifemart-xk-morning-metrics
+  cancel-in-progress: false
+jobs:
+  metrics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      LIFEMART_LOGIN: ${{ secrets.LIFEMART_LOGIN }}
+      LIFEMART_PASSWORD: ${{ secrets.LIFEMART_PASSWORD }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install pinned dependencies before tests
+        run: python3 -m pip install -r requirements-test.txt
+      - name: Validate all rules
+        run: python3 -m unittest discover -s tests -v
+      - name: Pin original local run date
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > /tmp/xk-run.json
+          python3 - <<'PYDATE'
+          import datetime as dt,json,os
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          created=dt.datetime.fromisoformat(json.loads(Path('/tmp/xk-run.json').read_text())['created_at'].replace('Z','+00:00'))
+          with open(os.environ['GITHUB_ENV'],'a') as out:out.write('EXPECTED_RUN_DATE='+created.astimezone(ZoneInfo('Asia/Yekaterinburg')).date().isoformat()+'\n')
+          PYDATE
+      - name: Install browser if needed
+        run: |
+          if ! command -v google-chrome >/dev/null; then
+            python3 -m playwright install --with-deps chromium
+          fi
+      - name: Read or fill К44 metrics
+        env:
+          OPERATION: ${{ inputs.operation || 'apply' }}
+        run: python3 -m xk_metrics.k44 --operation "$OPERATION"
