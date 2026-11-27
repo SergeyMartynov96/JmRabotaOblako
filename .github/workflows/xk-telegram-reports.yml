@@ -1,0 +1,67 @@
+name: LifeMart X76 K44 private reports
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [preview, deliver]
+        default: preview
+      branch:
+        type: choice
+        options: [all, Х76, К44]
+        default: all
+      review_public_key:
+        type: string
+        default: ''
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: lifemart-xk-private-reports
+  cancel-in-progress: false
+jobs:
+  reports:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      LIFEMART_LOGIN: ${{ secrets.LIFEMART_LOGIN }}
+      LIFEMART_PASSWORD: ${{ secrets.LIFEMART_PASSWORD }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      REVIEW_PUBLIC_KEY: ${{ inputs.review_public_key }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: python3 -m pip install -r requirements-test.txt
+      - run: python3 -m unittest discover -s tests -q
+      - name: Record local report day
+        id: day
+        run: echo "date=$(TZ=Asia/Yekaterinburg date -d yesterday +%F)" >> "$GITHUB_OUTPUT"
+      - name: Build four approved images per shop
+        env:
+          OPERATION: ${{ inputs.operation || 'preview' }}
+          BRANCH: ${{ inputs.branch || 'all' }}
+        run: xvfb-run -a python3 -m xk_reports.retry --operation "$OPERATION" --branch "$BRANCH"
+      - name: Encrypted private review
+        if: always() && inputs.review_public_key != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: encrypted-xk-report-review
+          path: review.enc.json
+          retention-days: 1
+          if-no-files-found: error
+      - name: X76 delivery attempt
+        if: always() && hashFiles('telegram-receipts/401.json') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: xk-telegram-attempt-${{ steps.day.outputs.date }}-401
+          path: telegram-receipts/401.json
+          retention-days: 14
+      - name: K44 delivery attempt
+        if: always() && hashFiles('telegram-receipts/140.json') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: xk-telegram-attempt-${{ steps.day.outputs.date }}-140
+          path: telegram-receipts/140.json
+          retention-days: 14

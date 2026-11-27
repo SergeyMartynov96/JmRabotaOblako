@@ -5,6 +5,7 @@ from telegram_reports.transport import BotClient,BotError,decrypt_recipient
 from telegram_reports.connect import BINDING
 
 NAMES={
+ 'xk-telegram-reports.yml':'Х76 и К44 — отправка утренних отчётов',
  'cloud-k44.yml':'К44 — перенос заявок в таблицу',
  'cloud-x76.yml':'Х76 — перенос заявок в таблицу',
  'cloud-production.yml':'АВ12 — перенос заявок в таблицу',
