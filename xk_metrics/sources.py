@@ -122,6 +122,12 @@ def read_tops(store,day):
 
 
 class Sources(ExtraSources):
+    def __init__(self,browser,client):
+        super().__init__(browser,client)
+        # This isolated runner reads all financial reports in the same verified
+        # browser session; avoid first repeating the unreliable HTTP login POST.
+        self.bi.browser_login=True
+
     def read(self,kind,branch,day):
         if kind!='invoices':return super().read(kind,branch,day)
         from telegram_reports.invoices import fetch_invoices

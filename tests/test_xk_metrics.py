@@ -8,6 +8,14 @@ from xk_metrics.sources import read_tops
 from daily_metrics.core import StructureError
 
 class SeparateStoreMetrics(unittest.TestCase):
+    def test_new_store_runner_starts_with_the_normal_active_browser_login(self):
+        from unittest.mock import MagicMock
+        from xk_metrics.sources import Sources,Client
+        client=Client();sources=Sources(MagicMock(),client)
+        self.assertTrue(sources.bi.browser_login)
+        self.assertIs(sources.bi.client,client)
+        self.assertIsNone(sources.bi.context)
+
     def test_writeoff_uses_verified_browser_get_for_one_store_and_day(self):
         import urllib.parse
         from unittest.mock import MagicMock
