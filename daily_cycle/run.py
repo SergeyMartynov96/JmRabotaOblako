@@ -104,6 +104,36 @@ def report_preflight(day):
 
 
 
+class DeliveryError(RuntimeError):
+    def __init__(self,branch):self.branch=branch
+
+
+def read_delivery_receipt(artifact,department):
+    import subprocess,tempfile
+    with tempfile.TemporaryDirectory() as folder:
+        subprocess.run(['gh','run','download',str(artifact['workflow_run']['id']),'--repo',os.environ['GITHUB_REPOSITORY'],
+                        '--name',artifact['name'],'--dir',folder],capture_output=True,check=True,timeout=60)
+        return json.loads((Path(folder)/(str(department)+'.json')).read_text())
+
+
+def report_delivery_confirmed(day):
+    from daily_metrics.config import BRANCHES
+    from xk_metrics.config import STORES
+    yesterday=day-dt.timedelta(days=1)
+    groups=[(b,8,'telegram-attempt','telegram-reports.yml') for b in BRANCHES]+[(s.branch,4,'xk-telegram-attempt','xk-telegram-reports.yml') for s in STORES.values()]
+    for branch,images,prefix,file in groups:
+        name=f'{prefix}-{yesterday}-{branch.department}'
+        artifacts=api('/actions/artifacts?per_page=100&name='+name)['artifacts']
+        artifacts=[a for a in artifacts if a['name']==name and not a.get('expired')]
+        if not artifacts:raise DeliveryError(branch.name)
+        latest=max(artifacts,key=lambda a:a['id'])
+        run=api('/actions/runs/'+str(latest['workflow_run']['id']))
+        if run.get('path')!='.github/workflows/'+file or run.get('head_branch')!='main':raise DeliveryError(branch.name)
+        receipt=read_delivery_receipt(latest,branch.department)
+        if (receipt.get('status')!='accepted' or receipt.get('day')!=str(yesterday)
+            or receipt.get('branch')!=branch.name or receipt.get('images')!=images):raise DeliveryError(branch.name)
+
+
 def failure_location(log):
     """Extract only approved shop/metric labels, never source values or raw errors."""
     labels={'revenue':'выручка','writeoff':'списания','uv':'упущенная выручка','osa':'OSA','invoices':'приходные накладные','reasons':'причины списаний','procurement':'закуп факт'}
@@ -164,6 +194,9 @@ def main():
                 if location:reason='Показатели: '+location+'\n'+reason
                 failure=reason+'\nЗапуск: '+run['html_url'];break
             done.append(label)
+        if failure is None and stage=='reports':
+            current='подтверждение доставки всех отчётов'
+            report_delivery_confirmed(day)
     except Exception as exc:
         # Static text only, never forward exception text or private source logs.
         failure={'Morning tables were not completed successfully':'Утреннее заполнение завершилось ошибкой. Отправка отчётов остановлена.',
@@ -171,6 +204,9 @@ def main():
         if isinstance(exc,PreparationError):
             current=exc.branch+' — готовность общей таблицы'
             failure='Не удалось подтвердить дату или обязательные показатели таблицы. Отправка всех отчётов остановлена до проверки.'
+        if isinstance(exc,DeliveryError):
+            current=exc.branch+' — подтверждение доставки'
+            failure='Нет подтверждённой квитанции Telegram для последней отправки этого магазина. Автоматический повтор отключён, чтобы не прислать дубли.'
     if failure is None:
         notify('✅ LifeMart: всё выполнено\n'+LABELS[stage]+'\n'+('Таблицы заполнены и проверены.' if stage=='morning' else 'Отчёты отправлены.' if stage=='reports' else 'Цифры поставщиков перенесены и проверены.'),stage,day)
         Path('cycle-complete.json').write_text(json.dumps({'day':str(day),'stage':stage,'status':'complete','run':own['id']}))

@@ -81,3 +81,19 @@ class Cycle(unittest.TestCase):
         import json
         lines=[{'branch':'Х76','source':'ui2_days','stage':'query'},{'branch':'К44','assembly_stage':'weekly_sheet'},{'report_failed':True,'error':'secret raw body'}]
         self.assertEqual(run.failure_location('\n'.join(map(json.dumps,lines))),'К44 — общая таблица')
+    def test_unknown_delivery_is_not_success(self):
+        artifact={'id':1,'name':'telegram-attempt-2026-11-26-115','workflow_run':{'id':9}}
+        metadata={'path':'.github/workflows/telegram-reports.yml','head_branch':'main'}
+        with patch.object(run,'api',side_effect=[{'artifacts':[artifact]},metadata]),patch.object(run,'read_delivery_receipt',return_value={'status':'unknown','branch':'АВ12','day':'2026-11-26','images':8}):
+            with self.assertRaises(run.DeliveryError) as error:run.report_delivery_confirmed(dt.date(2026,11,27))
+            self.assertEqual(error.exception.branch,'АВ12')
+    def test_all_five_accepted_receipts_are_required(self):
+        from daily_metrics.config import BRANCHES
+        from xk_metrics.config import STORES
+        groups=[(b,8,'telegram-attempt','telegram-reports.yml') for b in BRANCHES]+[(s.branch,4,'xk-telegram-attempt','xk-telegram-reports.yml') for s in STORES.values()]
+        responses=[];receipts=[]
+        for branch,images,prefix,file in groups:
+            responses.extend([{'artifacts':[{'id':branch.department,'name':f'{prefix}-2026-11-26-{branch.department}','workflow_run':{'id':9}}]}, {'path':'.github/workflows/'+file,'head_branch':'main'}])
+            receipts.append({'status':'accepted','branch':branch.name,'day':'2026-11-26','images':images})
+        with patch.object(run,'api',side_effect=responses),patch.object(run,'read_delivery_receipt',side_effect=receipts) as read:
+            run.report_delivery_confirmed(dt.date(2026,11,27));self.assertEqual(read.call_count,5)
