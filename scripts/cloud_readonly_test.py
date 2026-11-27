@@ -196,7 +196,7 @@ class ReadOnlySU:
 
 
 def spreadsheet(ident, gid):
-    url = f"https://docs.google.com/spreadsheets/d/{ident}/export?format=csv&gid={gid}"
+    url = f"https://docs.google.com/spreadsheets/d/{ident}/export?format=csv&gid={gid}&cachebust={time.time_ns()}"
     with urllib.request.urlopen(url, timeout=35) as response:
         if "csv" not in response.headers.get("Content-Type", ""):
             raise RuntimeError("Spreadsheet did not return CSV")

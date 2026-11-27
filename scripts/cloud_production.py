@@ -221,6 +221,7 @@ class Sheet:
         self.headers, self.rows = ro.spreadsheet(self.ident, self.gid)
 
     def select(self, cell):
+        self.page.bring_to_front()
         box = self.page.locator('#t-name-box')
         box.fill(cell)
         box.press('Enter')
@@ -229,20 +230,27 @@ class Sheet:
             raise Stop('Sheet selection mismatch')
 
     def formula(self, cell):
-        self.select(cell)
-        text = self.page.locator('#t-formula-bar-input').inner_text().strip()
-        self.page.wait_for_timeout(200)
-        if text != self.page.locator('#t-formula-bar-input').inner_text().strip():
-            raise Stop('Sheet selection not stable')
-        return text
+        previous = None
+        for _ in range(3):
+            self.select(cell)
+            text = self.page.locator('#t-formula-bar-input').inner_text().strip()
+            self.page.wait_for_timeout(250)
+            if text == previous:return text
+            previous = text
+        raise Stop('Sheet selection not stable')
 
-    def locate(self, supplier, arrival):
+    def locate(self, supplier, arrival, retry=True):
+        self.refresh()  # A new week may have been inserted after the sheet opened.
         col = ro.supplier_column(supplier, self.headers)
         rows = [i for i, r in enumerate(self.rows) if len(r) > 1 and r[1] == arrival]
         if col is None:
             raise Stop('Sheet supplier column missing or ambiguous')
+        if not rows and retry:
+            self.page.reload(wait_until='domcontentloaded',timeout=60000)
+            self.page.locator('#t-name-box').wait_for(timeout=45000)
+            return self.locate(supplier,arrival,retry=False)
         if not rows:
-            raise Stop('Sheet arrival date missing')
+            raise Stop('Sheet arrival date missing: '+arrival)
         if len(rows) != 1:
             raise Stop('Sheet arrival date duplicated')
         row = rows[0]
@@ -252,6 +260,10 @@ class Sheet:
         if self.formula(a1(header_rows[0], col)) != self.headers[col].strip():
             raise Stop('Sheet header changed')
         if self.formula(a1(row, 1)) != arrival:
+            if retry:
+                self.page.reload(wait_until='domcontentloaded',timeout=60000)
+                self.page.locator('#t-name-box').wait_for(timeout=45000)
+                return self.locate(supplier,arrival,retry=False)
             raise Stop('Sheet date changed')
         return row, col
 
