@@ -33,7 +33,7 @@ class SeparateStoreMetrics(unittest.TestCase):
         self.assertEqual(candidates(rows,STORES['Х76'],dt.date(2026,11,26)),[])
     def test_header_change_fails_instead_of_shifting_writes(self):
         rows=self.rows();rows[1][7]='OSA 17:00'
-        with self.assertRaises(StructureError):candidates(rows,STORES['Х76'],dt.date(2026,11,26))
+        with self.assertRaises(StructureError):targets(rows,STORES['Х76'],5,1,dt.date(2026,11,26))
     def test_procurement_uses_only_each_store_main_total(self):
         for name,col in [('Х76',18),('К44',20)]:
             rows=[['']*25 for _ in range(4)];rows[2][col]=name+' итог'

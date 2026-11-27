@@ -17,14 +17,14 @@ def candidates(rows,store,day):
     result=[]
     for h in range(1,len(rows)-1):
         if key(value(rows,h-1,o+1))!=store.marker:continue
-        if any(key(value(rows,h,o+c))!=label for c,label in FIELDS.values()):
-            raise StructureError('Store metric headers changed')
         for r in range(h+1,min(h+8,len(rows))):
             if date_matches(value(rows,r,o+1),day,allow_short=True):result.append((r,h))
     return result
 
 def targets(rows,store,row,header,day):
     o=store.offset
+    if any(key(value(rows,header,o+c))!=label for c,label in FIELDS.values()):
+        raise StructureError('Store metric headers changed')
     result={name:(row,o+c) for name,(c,_) in FIELDS.items()}
     rh=header+11
     if key(value(rows,rh,o+2))!='план':raise StructureError('Lower weekly header changed')

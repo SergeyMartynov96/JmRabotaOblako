@@ -34,7 +34,8 @@ def plan(sheet,store,branch,client,sources,day):
     rows=sheet.refresh();row,header=locate(sheet,rows,store,day)
     fields,reasons,rh=targets(rows,store,row,header,day)
     anchor=a1(row,store.offset+1)
-    sheet.anchors={anchor:sheet.anchor_value(anchor)}
+    marker=a1(header-1,store.offset+1)
+    sheet.anchors={anchor:sheet.anchor_value(anchor),marker:sheet.anchor_value(marker)}
     metrics={
         'revenue':revenue_report(client.revenue(branch,day),branch.title,day),
         'writeoff':writeoff_report(client.writeoff(branch,day),branch.title,day),
@@ -68,6 +69,7 @@ def plan(sheet,store,branch,client,sources,day):
         amount=procurement_value(procurement_rows,store,future)
         if amount is None:continue
         r,h=found[0];cell=(r,store.offset+14)
+        if key(value(rows,h,store.offset+14))!='закупфакт':raise StructureError('Future procurement header changed')
         date=a1(r,store.offset+1);sheet.anchors[date]=sheet.anchor_value(date)
         result.append((cell,amount))
     if any(not store.offset<=c<store.offset+25 for (r,c),literal in result):raise StructureError('Cross-store write forbidden')
