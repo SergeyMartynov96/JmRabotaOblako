@@ -107,11 +107,16 @@ def report_preflight(day):
 def failure_location(log):
     """Extract only approved shop/metric labels, never source values or raw errors."""
     labels={'revenue':'выручка','writeoff':'списания','uv':'упущенная выручка','osa':'OSA','invoices':'приходные накладные','reasons':'причины списаний','procurement':'закуп факт'}
-    result=[]
+    result=[];last=''
+    sources={'ui2_days':'недельные списания','ui2':'списания УИ2','top_qty':'ТОП списаний, шт','top_rub':'ТОП списаний, руб','uv_dishes':'УВ по позициям'}
+    assemblies={'weekly_sheet':'общая таблица','invoices':'приходные накладные','compose':'сборка изображений'}
     for line in log.splitlines():
         try:item=json.loads(line[line.index('{'):])
         except (ValueError,TypeError):continue
         if not isinstance(item,dict):continue
+        if item.get('branch') in ('АВ12','М42','Г34','Х76','К44'):
+            step=sources.get(item.get('source')) or assemblies.get(item.get('assembly_stage'))
+            if step:last=item['branch']+' — '+step
         for error in item.get('errors',[]) if isinstance(item.get('errors'),list) else []:
             if not isinstance(error,str):continue
             for branch in ('АВ12','М42','Г34','Х76','К44'):
@@ -120,7 +125,7 @@ def failure_location(log):
                         if re.search(r'\b'+key+r' (?:source|destination)',error):
                             value=branch+' — '+label
                             if value not in result:result.append(value)
-    return '; '.join(result)
+    return '; '.join(result) or last
 
 
 def notify(text,stage,day):
@@ -154,8 +159,8 @@ def main():
                 import subprocess
                 result=subprocess.run(['gh','run','view',str(run['id']),'--repo',os.environ['GITHUB_REPOSITORY'],'--log-failed'],capture_output=True,text=True,timeout=60)
                 log=result.stdout[-500000:] if result.returncode==0 else ''
-                _,reason=diagnose(log,run['conclusion'])
-                location=failure_location(log)
+                category,reason=diagnose(log,run['conclusion'])
+                location=failure_location(log) if category!='code' else ''
                 if location:reason='Показатели: '+location+'\n'+reason
                 failure=reason+'\nЗапуск: '+run['html_url'];break
             done.append(label)

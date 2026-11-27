@@ -50,7 +50,9 @@ def collect(bi,charts,store,day,folder):
 
 def assemble(browser,bi,store,day,folder,panels):
     images=[folder/f'{i:02}.png' for i in range(4)]
+    print(json.dumps({'branch':store.branch.name,'assembly_stage':'weekly_sheet'}),flush=True)
     capture(bi.context,store,day,images[0])
+    print(json.dumps({'branch':store.branch.name,'assembly_stage':'compose'}),flush=True)
     compose(browser,[panels['ui2_days'],panels['ui2']],images[1],columns=2)
     compose(browser,[panels['top_qty'],panels['top_rub']],images[2],columns=2)
     compose(browser,[panels['uv_dishes']],images[3])

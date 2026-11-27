@@ -77,3 +77,7 @@ class Cycle(unittest.TestCase):
             with self.assertRaises(run.PreparationError) as error:run.report_preflight(dt.date(2026,11,27))
             self.assertEqual(error.exception.branch,'АВ12')
             self.assertNotIn('private',str(error.exception))
+    def test_native_report_failure_names_last_approved_shop_and_step(self):
+        import json
+        lines=[{'branch':'Х76','source':'ui2_days','stage':'query'},{'branch':'К44','assembly_stage':'weekly_sheet'},{'report_failed':True,'error':'secret raw body'}]
+        self.assertEqual(run.failure_location('\n'.join(map(json.dumps,lines))),'К44 — общая таблица')
