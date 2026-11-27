@@ -1,10 +1,12 @@
 name: LifeMart X76 daily facts
-run-name: LifeMart X76 ${{ github.event_name == 'schedule' && 'daily apply' || inputs.operation }} (16:00)
+run-name: LifeMart X76 ${{ github.event_name == 'schedule' && 'daily apply' || inputs.operation }} (16:00) ${{ inputs.cycle_id != '' && format('[cycle:{0}]', inputs.cycle_id) || '' }}
 on:
-  schedule:
-    - cron: '0 11 * * *' # 16:00 Asia/Yekaterinburg; external timer is primary
   workflow_dispatch:
     inputs:
+      cycle_id:
+        description: Parent daily cycle run; automatic writes use this coordinator
+        type: string
+        default: ''
       operation:
         description: X76 only; preview reads, apply transfers all sent facts after 16:00
         type: choice
@@ -19,6 +21,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   production:
+    if: inputs.cycle_id != '' || inputs.operation == 'preview' || inputs.operation == 'verify' || inputs.operation == 'monitor-verify'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

@@ -1,13 +1,12 @@
 name: LifeMart AV12 facts
-run-name: LifeMart AV12 ${{ github.event_name == 'schedule' && 'daily apply' || inputs.operation }} (${{ inputs.external_window != 'none' && inputs.external_window || github.event.schedule || inputs.slots }})
+run-name: LifeMart AV12 ${{ github.event_name == 'schedule' && 'daily apply' || inputs.operation }} (${{ inputs.external_window != 'none' && inputs.external_window || github.event.schedule || inputs.slots }}) ${{ inputs.cycle_id != '' && format('[cycle:{0}]', inputs.cycle_id) || '' }}
 on:
-  schedule:
-    # Asia/Yekaterinburg is UTC+5 throughout the year.
-    - cron: '30 3 * * *'  # 08:30 -> 09:00,10:00
-    - cron: '30 5 * * *'  # 10:30 -> 11:00,12:00,13:00
-    - cron: '0 9 * * *'   # 14:00 -> 15:00,16:00
   workflow_dispatch:
     inputs:
+      cycle_id:
+        description: Parent daily cycle run; automatic writes use this coordinator
+        type: string
+        default: ''
       operation:
         description: AV12 only; apply transfers verified facts, no request edits
         type: choice
@@ -32,6 +31,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   production:
+    if: inputs.cycle_id != '' || inputs.operation == 'preview' || inputs.operation == 'verify' || inputs.operation == 'monitor-verify'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

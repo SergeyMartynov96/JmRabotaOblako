@@ -20,7 +20,7 @@ def preflight(store,day):
 
 
 def export_bounds(store,header,lower):
-    return {'r1':header-1,'r2':lower+9,'c1':store.offset+1,'c2':store.offset+20}
+    return {'r1':header-1,'r2':lower+9,'c1':store.offset+1,'c2':store.offset+25}
 
 
 def capture(context,store,day,destination):

@@ -206,6 +206,7 @@ class SeparateStoreMetrics(unittest.TestCase):
         from pathlib import Path
         for slug in ('x76','k44'):
             workflow=Path(f'.github/workflows/{slug}-morning-metrics.yml').read_text()
-            self.assertIn("cron: '0 2 * * *'",workflow)
+            self.assertNotIn("  schedule:",workflow)
+            self.assertIn("inputs.cycle_id",workflow)
             self.assertIn(f'python3 -m xk_metrics.{slug}',workflow)
             self.assertLess(workflow.index('pip install'),workflow.index('unittest discover'))

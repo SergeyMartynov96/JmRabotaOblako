@@ -1,8 +1,12 @@
 name: LifeMart private Telegram reports
-run-name: Telegram reports (${{ inputs.operation || 'deliver' }} / ${{ inputs.branch || 'all' }})
+run-name: Telegram reports (${{ inputs.operation || 'deliver' }} / ${{ inputs.branch || 'all' }}) ${{ inputs.cycle_id != '' && format('[cycle:{0}]', inputs.cycle_id) || '' }}
 on:
   workflow_dispatch:
     inputs:
+      cycle_id:
+        description: Parent daily cycle run; automatic writes use this coordinator
+        type: string
+        default: ''
       operation:
         type: choice
         options: [preview, deliver, verify]

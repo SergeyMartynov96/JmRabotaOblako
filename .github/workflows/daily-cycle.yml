@@ -1,0 +1,53 @@
+name: LifeMart three daily cycles
+run-name: LifeMart cycle ${{ inputs.stage || (github.event.schedule == '0 2 * * *' && 'morning' || github.event.schedule == '0 3 * * *' && 'reports' || 'suppliers') }}
+on:
+  schedule:
+    - cron: '0 2 * * *' # 07:00 Екатеринбург
+    - cron: '0 3 * * *' # 08:00 Екатеринбург
+    - cron: '0 11 * * *' # 16:00 Екатеринбург
+  workflow_dispatch:
+    inputs:
+      stage:
+        type: choice
+        options: [morning, reports, suppliers]
+        required: true
+      operation:
+        type: choice
+        options: [verify, run]
+        default: verify
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: lifemart-cycle-${{ inputs.stage || (github.event.schedule == '0 2 * * *' && 'morning' || github.event.schedule == '0 3 * * *' && 'reports' || 'suppliers') }}
+  cancel-in-progress: false
+jobs:
+  cycle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - run: python3 -m pip install -r requirements-test.txt
+      - run: python3 -m unittest discover -s tests -q
+      - name: Coordinate business stage and send one private result
+        env:
+          STAGE: ${{ inputs.stage || (github.event.schedule == '0 2 * * *' && 'morning' || github.event.schedule == '0 3 * * *' && 'reports' || 'suppliers') }}
+          VERIFY: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'verify' }}
+        run: |
+          if [ "$VERIFY" = true ]; then
+            python3 -m daily_cycle.run --stage "$STAGE" --verify
+          else
+            python3 -m daily_cycle.run --stage "$STAGE"
+          fi
+      - name: Preserve status acknowledgement without private contents
+        if: always() && hashFiles('cycle-receipt.json') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: daily-cycle-status-${{ github.run_id }}
+          path: cycle-receipt.json
+          retention-days: 14

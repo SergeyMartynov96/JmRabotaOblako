@@ -1,10 +1,12 @@
 name: LifeMart К44 morning metrics 07:00
-run-name: К44 morning metrics (${{ inputs.operation || 'apply' }})
+run-name: К44 morning metrics (${{ inputs.operation || 'apply' }}) ${{ inputs.cycle_id != '' && format('[cycle:{0}]', inputs.cycle_id) || '' }}
 on:
-  schedule:
-    - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
+      cycle_id:
+        description: Parent daily cycle run; automatic writes use this coordinator
+        type: string
+        default: ''
       operation:
         type: choice
         options: [preview, apply, verify]
@@ -17,6 +19,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   metrics:
+    if: inputs.cycle_id != '' || inputs.operation == 'preview' || inputs.operation == 'verify' || inputs.operation == 'monitor-verify'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:

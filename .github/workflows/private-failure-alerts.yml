@@ -1,7 +1,7 @@
 name: LifeMart private failure alerts
 on:
   workflow_run:
-    workflows: ["LifeMart X76 K44 private reports", "LifeMart K44 daily facts", "LifeMart AV12 facts", "LifeMart cloud read-only test", "LifeMart X76 daily facts", "LifeMart daily metrics", "LifeMart К44 morning metrics 07:00", "LifeMart additional sources check", "Read-only procurement date window check", "Repair failed writeoff placeholders", "Prevent plaintext secrets", "LifeMart secret configuration audit", "Telegram connection check", "Telegram private connection", "Telegram report schema inspection", "Telegram native report preview", "LifeMart Telegram 09:00 timer", "LifeMart private Telegram reports", "LifeMart Х76 morning metrics 07:00"]
+    workflows: ["LifeMart three daily cycles", "LifeMart X76 K44 private reports", "LifeMart K44 daily facts", "LifeMart AV12 facts", "LifeMart cloud read-only test", "LifeMart X76 daily facts", "LifeMart daily metrics", "LifeMart К44 morning metrics 07:00", "LifeMart additional sources check", "Read-only procurement date window check", "Repair failed writeoff placeholders", "Prevent plaintext secrets", "LifeMart secret configuration audit", "Telegram connection check", "Telegram private connection", "Telegram report schema inspection", "Telegram native report preview", "LifeMart Telegram 09:00 timer", "LifeMart private Telegram reports", "LifeMart Х76 morning metrics 07:00"]
     types: [completed]
     branches: [main]
   workflow_dispatch:

@@ -5,6 +5,7 @@ from telegram_reports.transport import BotClient,BotError,decrypt_recipient
 from telegram_reports.connect import BINDING
 
 NAMES={
+ 'daily-cycle.yml':'Общий ежедневный запуск',
  'xk-telegram-reports.yml':'Х76 и К44 — отправка утренних отчётов',
  'cloud-k44.yml':'К44 — перенос заявок в таблицу',
  'cloud-x76.yml':'Х76 — перенос заявок в таблицу',
@@ -55,7 +56,7 @@ def canonical(run,repo):
     return (path in NAMES and run.get('head_branch')=='main' and
             run.get('head_repository',{}).get('full_name')==repo and
             run.get('event') in ('workflow_dispatch','schedule','push') and
-            run.get('conclusion') in ('failure','timed_out'))
+            run.get('conclusion') in ('failure','timed_out') and '[cycle:' not in run.get('display_title',''))
 
 
 def api(path):
@@ -81,6 +82,8 @@ def main():
     bucket=completed.strftime('%Y-%m-%d-%H')+str(completed.minute//30)
     receipt='lifemart-alert-'+hashlib.sha256((file+bucket+category).encode()).hexdigest()[:32]
     artifacts=api('/actions/artifacts?per_page=100')['artifacts']
+    if file=='daily-cycle.yml' and any(a['name']=='daily-cycle-status-'+str(ident) and not a.get('expired') for a in artifacts):
+        print('{"alert_skipped":"cycle_already_reported"}');return
     if any(a['name']==receipt and not a.get('expired') for a in artifacts):
         print('{"alert_skipped":"incident_already_reported"}');return
     bot=BotClient(os.environ.get('TELEGRAM_BOT_TOKEN',''));me=bot.identity()
