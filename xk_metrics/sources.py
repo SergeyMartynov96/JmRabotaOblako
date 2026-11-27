@@ -5,7 +5,7 @@ import urllib.parse
 import urllib.error
 from decimal import Decimal
 from daily_metrics.session import ReportSUReports
-from daily_metrics.io import SU,REVENUE,csv_sheet
+from daily_metrics.io import SU,REVENUE,WRITEOFF,csv_sheet
 from daily_metrics.core import Report,StructureError,DASH,value,date_matches,number,text
 from daily_metrics.extended_io import ExtraSources,CHARTS
 from daily_metrics.extended_core import daily_query,bi_percent,bi_rows,key,percentage_points
@@ -23,6 +23,36 @@ class Client(ReportSUReports):
                 'date_do':day.strftime('%d.%m.%Y'),'day_of_week[]':['all'],'night':'2'}
             self.revenue_cache[day]=self.browser_revenue(params)
         return self.revenue_cache[day]
+
+    def writeoff(self,branch,day):
+        self.ensure_authenticated()
+        context=getattr(self,'report_context',None)
+        if context is None:raise StructureError('Verified browser session required for writeoff')
+        if branch.department not in (140,401):raise StructureError('Foreign writeoff store')
+        params={'WriteOffAct[create_date_from]':day.strftime('%d.%m.%Y'),
+                'WriteOffAct[create_date_to]':day.strftime('%d.%m.%Y'),
+                'WriteOffAct[search_project_id]':'2',
+                'WriteOffAct[department_id][]':[str(branch.department)],'yt6':'Сформировать'}
+        url=SU+WRITEOFF+'?'+urllib.parse.urlencode(params,doseq=True)
+        deadline=time.monotonic()+180
+        print('SU: reading writeoff through the verified browser session',flush=True)
+        for attempt in range(2):
+            remaining=deadline-time.monotonic()
+            if remaining<=0:raise ConnectionError('Writeoff report deadline exhausted')
+            try:
+                response=context.request.get(url,timeout=max(1,int(min(120,remaining)*1000)))
+                if response.status in (429,500,502,503,504):raise ConnectionError('Temporary writeoff server response')
+                if response.status!=200:raise StructureError('Writeoff report HTTP '+str(response.status))
+                observed=urllib.parse.urlsplit(response.url)
+                if (observed.scheme,observed.netloc,observed.path)!=('https','su.lifemart.ru',WRITEOFF):
+                    raise StructureError('Writeoff response left the approved endpoint')
+                html=response.text()
+                if 'LoginForm[password]' in html:raise StructureError('Writeoff session expired')
+                return html
+            except Exception as exc:
+                if not transient_browser_error(exc):raise
+                if attempt:raise ConnectionError('Writeoff report transport unavailable') from None
+                print('SU: retrying writeoff within the three-minute budget',flush=True)
 
     def browser_revenue(self,params):
         expected={'department[]','brandId','format','date_s','date_do','day_of_week[]','night'}
@@ -49,14 +79,17 @@ class Client(ReportSUReports):
                 if 'LoginForm[password]' in html:raise StructureError('Revenue session expired')
                 return html
             except Exception as exc:
-                message=str(exc).casefold()
-                transient=isinstance(exc,(TimeoutError,ConnectionError)) or (
-                    type(exc).__module__.startswith('playwright.') and
-                    (type(exc).__name__=='TimeoutError' or any(code in message for code in (
-                        'etimedout','econnreset','enotfound','socket hang up','connection reset','connection closed'))))
-                if not transient:raise
+                if not transient_browser_error(exc):raise
                 if attempt:raise ConnectionError('Revenue report transport unavailable') from None
                 print('SU: retrying revenue within the original generation budget',flush=True)
+
+
+def transient_browser_error(exc):
+    message=str(exc).casefold()
+    return isinstance(exc,(TimeoutError,ConnectionError)) or (
+        type(exc).__module__.startswith('playwright.') and
+        (type(exc).__name__=='TimeoutError' or any(code in message for code in (
+            'etimedout','econnreset','enotfound','socket hang up','connection reset','connection closed'))))
 
 
 def resolve_branch(client,store,day):

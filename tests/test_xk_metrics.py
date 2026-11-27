@@ -8,6 +8,31 @@ from xk_metrics.sources import read_tops
 from daily_metrics.core import StructureError
 
 class SeparateStoreMetrics(unittest.TestCase):
+    def test_writeoff_uses_verified_browser_get_for_one_store_and_day(self):
+        import urllib.parse
+        from unittest.mock import MagicMock
+        from xk_metrics.sources import Client
+        from daily_metrics.io import SU,WRITEOFF
+        client=Client();client._authenticated=True;client.report_context=MagicMock()
+        response=client.report_context.request.get.return_value
+        response.status=200;response.url=SU+WRITEOFF;response.text.return_value='complete-writeoff'
+        self.assertEqual(client.writeoff(STORES['Х76'].branch,dt.date(2026,11,26)),'complete-writeoff')
+        call=client.report_context.request.get.call_args
+        fields=urllib.parse.parse_qs(urllib.parse.urlsplit(call.args[0]).query)
+        self.assertEqual(fields['WriteOffAct[department_id][]'],['401'])
+        self.assertEqual(fields['WriteOffAct[create_date_from]'],['26.11.2026'])
+        self.assertEqual(fields['WriteOffAct[create_date_to]'],['26.11.2026'])
+        self.assertLessEqual(call.kwargs['timeout'],120000)
+        client.report_context.request.post.assert_not_called()
+
+    def test_writeoff_does_not_retry_forbidden(self):
+        from unittest.mock import MagicMock
+        from xk_metrics.sources import Client
+        client=Client();client._authenticated=True;client.report_context=MagicMock()
+        client.report_context.request.get.return_value.status=403
+        with self.assertRaises(StructureError):client.writeoff(STORES['К44'].branch,dt.date(2026,11,26))
+        self.assertEqual(client.report_context.request.get.call_count,1)
+
     def test_reported_reason_can_refresh_a_verified_old_scalar(self):
         from unittest.mock import MagicMock
         from xk_metrics.run import put_value
