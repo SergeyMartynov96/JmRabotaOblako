@@ -2,6 +2,9 @@ import unittest
 from workflow_alerts.run import canonical,diagnose
 
 class PrivateFailureAlerts(unittest.TestCase):
+    def test_su_request_timeouts_and_metrics_timeouts_are_understandable(self):
+        self.assertIn('СУ',diagnose('FAIL: TimeoutError\nTRACE: cloud_readonly_test.py:178','failure')[1])
+        self.assertEqual(diagnose('revenue source failed (TimeoutError)','failure')[0],'timeout')
     def test_missing_arrival_includes_only_validated_date(self):
         self.assertIn('29.11.2026',diagnose('FAIL: Sheet arrival date missing: 29.11.2026','failure')[1])
         self.assertNotIn('99.99.9999',diagnose('FAIL: Sheet arrival date missing: 99.99.9999','failure')[1])

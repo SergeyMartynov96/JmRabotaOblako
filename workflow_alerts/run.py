@@ -38,7 +38,9 @@ def diagnose(log,conclusion):
     if any(x in log for x in ('Sheet date changed','Sheet header changed','Concurrent sheet change','Sheet selection not stable')):
         return 'sheet','Не удалось надёжно подтвердить дату или ячейку таблицы. Запись остановлена, чтобы не попасть в чужую строку.'
     if 'Summary metrics not ready:' in log:return 'incomplete','Не заполнены обязательные показатели таблицы. Неполный отчёт не отправлен.'
-    if any(x in log for x in ('TimeoutError:','FAIL: TimeoutError','report_failed": true, "error": "ConnectionError','ETIMEDOUT','transport unavailable','transport deadline exhausted')) or conclusion=='timed_out':
+    if any(x in log for x in ('TimeoutError:','FAIL: TimeoutError','(TimeoutError)','(URLError)','(ConnectionError)','report_failed": true, "error": "ConnectionError','ETIMEDOUT','transport unavailable','transport deadline exhausted')) or conclusion=='timed_out':
+        if '_load_su_login_form' in log:return 'timeout','Не загрузилась страница входа в СУ. Данные не удалось проверить; нужна повторная попытка подключения.'
+        if 'cloud_readonly_test.py' in log or 'Read-only SU request retry' in log:return 'timeout','СУ не ответила вовремя при чтении заявок. Незавершённый перенос нужно повторить после проверки источника.'
         return 'timeout','Источник данных или страница не ответили вовремя. Нужна повторная проверка доступа и незавершённого переноса.'
     if any(x in log for x in ('SU login failed','SU browser login failed','HTTP 403','HTTP Error 403')):
         return 'access','Не удалось войти в систему или доступ отклонён. Нужна проверка подключения.'
