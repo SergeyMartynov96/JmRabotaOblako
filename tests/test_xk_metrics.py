@@ -8,6 +8,23 @@ from xk_metrics.sources import read_tops
 from daily_metrics.core import StructureError
 
 class SeparateStoreMetrics(unittest.TestCase):
+    def test_reported_reason_can_refresh_a_verified_old_scalar(self):
+        from unittest.mock import MagicMock
+        from xk_metrics.run import put_value
+        sheet=MagicMock();sheet.stable_formula.return_value='2,4%'
+        self.assertTrue(put_value(sheet,'M2042','2,6%',reason=True))
+        sheet.replace_if_unchanged.assert_called_once_with('M2042','2,4%','2,6%')
+        sheet.put_blank.assert_not_called()
+
+    def test_reason_formulas_and_concurrent_changes_are_protected(self):
+        from unittest.mock import MagicMock
+        from xk_metrics.run import put_value
+        sheet=MagicMock();sheet.stable_formula.return_value='=SUM(M1:M2)'
+        self.assertFalse(put_value(sheet,'M2042','2,6%',reason=True))
+        sheet.replace_if_unchanged.assert_not_called()
+        sheet.stable_formula.return_value='2,4%';sheet.replace_if_unchanged.return_value=False
+        with self.assertRaisesRegex(StructureError,'concurrently'):put_value(sheet,'M2042','2,6%',reason=True)
+
     def test_revenue_browser_transport_keeps_the_exact_two_store_daily_request_and_cache(self):
         import urllib.parse
         from unittest.mock import MagicMock

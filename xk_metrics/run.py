@@ -30,6 +30,19 @@ def locate(sheet,rows,store,day):
     return found[0]
 
 
+def put_value(sheet,cell,literal,*,reason=False):
+    if reason:
+        current=sheet.stable_formula(cell)
+        if current:
+            if current.startswith('=') or same_cell_value(current,literal):return False
+            try:number(current)
+            except StructureError:return False
+            if not sheet.replace_if_unchanged(cell,current,literal):
+                raise StructureError('Reason changed concurrently; not overwritten')
+            return True
+    return sheet.put_blank(cell,literal)
+
+
 def plan(sheet,store,branch,client,sources,day):
     rows=sheet.refresh();row,header=locate(sheet,rows,store,day)
     fields,reasons,rh=targets(rows,store,row,header,day)
@@ -74,6 +87,7 @@ def plan(sheet,store,branch,client,sources,day):
         result.append((cell,amount))
     if any(not store.offset<=c<store.offset+25 for (r,c),literal in result):raise StructureError('Cross-store write forbidden')
     sheet.allowed={a1(r,c) for (r,c),literal in result}
+    sheet.reason_cells={a1(r,c) for r,c in reasons.values()}
     return result,len(reported.keys()-reasons.keys())
 
 
@@ -96,7 +110,7 @@ def execute(store,operation):
                 check_date(day)
                 cell=a1(r,c)
                 if operation=='apply':
-                    if sheet.put_blank(cell,literal):written+=1
+                    if put_value(sheet,cell,literal,reason=cell in sheet.reason_cells):written+=1
                     else:preserved+=1
             if operation=='verify':
                 rows=sheet.refresh();daily_row,header=locate(sheet,rows,store,day)
