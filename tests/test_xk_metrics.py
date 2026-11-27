@@ -8,6 +8,19 @@ from xk_metrics.sources import read_tops
 from daily_metrics.core import StructureError
 
 class SeparateStoreMetrics(unittest.TestCase):
+    def test_invoices_use_the_verified_report_transport_and_same_suppliers(self):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+        from xk_metrics.sources import Sources
+        from daily_metrics.config import INVOICE_SUPPLIERS
+        sources=Sources.__new__(Sources);sources.bi=SimpleNamespace(context=object())
+        sources.client=MagicMock();branch=STORES['Х76'].branch;day=dt.date(2026,11,26)
+        with patch('telegram_reports.invoices.fetch_invoices',return_value='verified-source') as fetch,patch('daily_metrics.extended_core.invoice_total',return_value=123) as total:
+            self.assertEqual(sources.read('invoices',branch,day),123)
+        fetch.assert_called_once_with(sources.bi.context,branch,day)
+        total.assert_called_once_with('verified-source',branch.title,day,INVOICE_SUPPLIERS)
+        sources.client.request.assert_not_called()
+
     def test_source_store_requires_the_verified_full_title(self):
         from unittest.mock import MagicMock
         from xk_metrics.sources import resolve_branch

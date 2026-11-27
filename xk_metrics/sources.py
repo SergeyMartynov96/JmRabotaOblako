@@ -48,6 +48,15 @@ def read_tops(store,day):
 
 
 class Sources(ExtraSources):
+    def read(self,kind,branch,day):
+        if kind!='invoices':return super().read(kind,branch,day)
+        from telegram_reports.invoices import fetch_invoices
+        from daily_metrics.extended_core import invoice_total
+        from daily_metrics.config import INVOICE_SUPPLIERS
+        if self.bi.context is None:raise StructureError('Verified browser session required for invoices')
+        source=fetch_invoices(self.bi.context,branch,day)
+        return invoice_total(source,branch.title,day,INVOICE_SUPPLIERS)
+
     def osa_pair(self,branch,day):
         form,context=self.bi.template('osa')
         query=daily_query(context,day,branch.title)
