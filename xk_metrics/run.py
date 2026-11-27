@@ -2,7 +2,7 @@
 import argparse,datetime as dt,json,os,shutil,dataclasses
 from decimal import Decimal
 from zoneinfo import ZoneInfo
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright,TimeoutError as BrowserTimeout
 from daily_metrics.core import StructureError,DASH,a1,value,money,number,revenue_report,writeoff_report,date_matches,same_cell_value
 from daily_metrics.io import RevenueSheet,csv_sheet,native_cell
 from daily_metrics.run import check_date
@@ -132,7 +132,7 @@ def main(store_name):
     import urllib.error
     for attempt in range(2):
         try:execute(STORES[store_name],args.operation);return
-        except (TimeoutError,ConnectionError,urllib.error.URLError) as exc:
+        except (TimeoutError,BrowserTimeout,ConnectionError,urllib.error.URLError) as exc:
             if isinstance(exc,urllib.error.HTTPError) and exc.code not in (429,500,502,503,504):raise
             if attempt:raise
             print('Transient source failure; retrying this store in a fresh session',flush=True)

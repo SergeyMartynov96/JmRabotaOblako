@@ -4,10 +4,11 @@ import time
 import urllib.parse
 import urllib.error
 from decimal import Decimal
+from playwright.sync_api import TimeoutError as BrowserTimeout
 from daily_metrics.session import ReportSUReports
 from daily_metrics.io import SU,REVENUE,WRITEOFF,csv_sheet
 from daily_metrics.core import Report,StructureError,DASH,value,date_matches,number,text
-from daily_metrics.extended_io import ExtraSources,CHARTS
+from daily_metrics.extended_io import ExtraSources,BIReports,CHARTS
 from daily_metrics.extended_core import daily_query,bi_percent,bi_rows,key,percentage_points
 
 class Client(ReportSUReports):
@@ -121,12 +122,23 @@ def read_tops(store,day):
     return output
 
 
+class StoreBIReports(BIReports):
+    def _load_su_login_form(self,page,deadline):
+        try:return super()._load_su_login_form(page,deadline)
+        except BrowserTimeout:
+            # A failed navigation has no usable execution context. Close this
+            # disposable page before the shared diagnostic evaluate can stall.
+            try:page.close()
+            except Exception:pass
+            raise
+
+
 class Sources(ExtraSources):
     def __init__(self,browser,client):
-        super().__init__(browser,client)
         # This isolated runner reads all financial reports in the same verified
         # browser session; avoid first repeating the unreliable HTTP login POST.
-        self.bi.browser_login=True
+        self.client=client
+        self.bi=StoreBIReports(browser,client,browser_login=True)
 
     def read(self,kind,branch,day):
         if kind!='invoices':return super().read(kind,branch,day)

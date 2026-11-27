@@ -8,6 +8,29 @@ from xk_metrics.sources import read_tops
 from daily_metrics.core import StructureError
 
 class SeparateStoreMetrics(unittest.TestCase):
+    def test_browser_timeout_gets_one_fresh_session_retry(self):
+        from playwright.sync_api import TimeoutError as BrowserTimeout
+        from xk_metrics.run import main
+        with patch('sys.argv',['k44','--operation','verify']),patch('xk_metrics.run.execute',side_effect=[BrowserTimeout('navigation timeout'),None]) as execute:
+            main('К44')
+        self.assertEqual(execute.call_count,2)
+
+    def test_incomplete_login_page_is_closed_before_failure_diagnostics(self):
+        from unittest.mock import MagicMock
+        from playwright.sync_api import TimeoutError as BrowserTimeout
+        from xk_metrics.sources import StoreBIReports
+        page=MagicMock();bi=StoreBIReports(MagicMock(),MagicMock(),browser_login=True)
+        with patch('daily_metrics.extended_io.BIReports._load_su_login_form',side_effect=BrowserTimeout('navigation timeout')):
+            with self.assertRaises(BrowserTimeout):bi._load_su_login_form(page,1000)
+        page.close.assert_called_once()
+
+    def test_successful_login_form_is_not_closed(self):
+        from unittest.mock import MagicMock
+        from xk_metrics.sources import StoreBIReports
+        page=MagicMock();bi=StoreBIReports(MagicMock(),MagicMock(),browser_login=True)
+        with patch('daily_metrics.extended_io.BIReports._load_su_login_form',return_value=None):bi._load_su_login_form(page,1000)
+        page.close.assert_not_called()
+
     def test_new_store_runner_starts_with_the_normal_active_browser_login(self):
         from unittest.mock import MagicMock
         from xk_metrics.sources import Sources,Client
