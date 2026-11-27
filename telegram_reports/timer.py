@@ -1,4 +1,4 @@
-"""Use the existing external 08:00 signal to dispatch private reports at 09:00."""
+"""Prepare reports from 08:30, with delivery no earlier than 09:00."""
 import argparse,datetime as dt,json,os,time,urllib.request
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -22,6 +22,7 @@ def due_time(event,now,repo):
 def dispatch(operation):
     repo=os.environ['GITHUB_REPOSITORY'];token=os.environ['GH_TOKEN']
     payload={'ref':'main','inputs':{'operation':operation,'branch':'all'}}
+    if operation=='deliver':payload['inputs']['delivery_time']='09:00'
     request=urllib.request.Request(f'https://api.github.com/repos/{repo}/actions/workflows/telegram-reports.yml/dispatches',
         data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','Content-Type':'application/json'},method='POST')
     try:
@@ -58,9 +59,10 @@ def main():
     if target is None:print('{"timer_skipped":"not_the_external_morning_run"}',flush=True);return
     if event['workflow_run'].get('status')=='completed' and not metrics_ready(event['workflow_run']):
         print('{"timer_skipped":"metrics_not_successful"}',flush=True);return
-    print('Report dispatch armed for 09:00 Asia/Yekaterinburg',flush=True)
+    collection_start=target-dt.timedelta(minutes=30)
+    print('Report collection armed for 08:30; delivery from 09:00 Asia/Yekaterinburg',flush=True)
     while True:
-        remaining=(target-dt.datetime.now(TZ)).total_seconds()
+        remaining=(collection_start-dt.datetime.now(TZ)).total_seconds()
         if remaining<=0:break
         time.sleep(min(20,remaining))
     # Read completion again at dispatch time; the 08:00 requested event alone

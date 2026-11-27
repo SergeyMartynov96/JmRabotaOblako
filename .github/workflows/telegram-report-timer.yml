@@ -32,7 +32,7 @@ jobs:
       - name: Verify dispatch without reports
         if: github.event_name == 'workflow_dispatch' && inputs.operation != 'arm_morning'
         run: python3 -m telegram_reports.timer --verify
-      - name: Wait for 09:00 from existing external morning signal
+      - name: Prepare from 08:30 for delivery from 09:00
         if: github.event_name == 'workflow_run'
         run: python3 -m telegram_reports.timer
       - name: Restore today's morning timer from verified parent

@@ -1,5 +1,5 @@
 """Collect eight validated private report images for each approved branch."""
-import argparse,datetime as dt,json,os,shutil,tempfile,urllib.request
+import argparse,datetime as dt,json,os,shutil,tempfile,time,urllib.request
 from contextlib import contextmanager
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -22,6 +22,20 @@ from .transport import BotClient,BotError,decrypt_recipient,send_album
 from .connect import BINDING
 
 TZ=ZoneInfo('Asia/Yekaterinburg')
+
+
+def wait_for_summary_time(day,mode):
+    """Keep BI collection early, but refresh native Sheets only at delivery time."""
+    if mode=='immediate':return
+    if mode!='09:00':raise StructureError('Unknown report delivery time')
+    target=dt.datetime.combine(day+dt.timedelta(days=1),dt.time(9),TZ)
+    print('BI collection ready; weekly summary and delivery from 09:00',flush=True)
+    while True:
+        now=dt.datetime.now(TZ)
+        if now.date()!=target.date():raise StructureError('Report day changed before summary capture')
+        remaining=(target-now).total_seconds()
+        if remaining<=0:return
+        time.sleep(min(20,remaining))
 
 
 def osa_yesterday(payload,day):
@@ -208,6 +222,8 @@ def main():
                         folder=root/str(branch.department)
                         captured.append((branch,folder,collect_bi(browser,bi,charts,branch,day,folder)))
                     # No other browser page is opened until every BI image has finished.
+                    if args.operation=='deliver':
+                        wait_for_summary_time(day,os.getenv('REPORT_DELIVERY_TIME','immediate'))
                     for branch,folder,source in captured:
                         images,text=assemble(browser,bi,branch,day,folder,*source,invoice_html=invoice_sources[branch.department],sync_reason_cells=args.operation=='deliver')
                         collected.append((branch,images,text))

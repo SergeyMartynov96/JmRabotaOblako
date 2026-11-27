@@ -17,6 +17,11 @@ on:
         type: choice
         options: [none, all, АВ12, М42, Г34]
         default: none
+      delivery_time:
+        description: Prepare early, then refresh the weekly summary and deliver from local 09:00
+        type: choice
+        options: [immediate, '09:00']
+        default: immediate
       review_public_key:
         description: Optional base64 public key; required for preview
         type: string
@@ -30,7 +35,7 @@ concurrency:
 jobs:
   reports:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 75
     env:
       LIFEMART_LOGIN: ${{ secrets.LIFEMART_LOGIN }}
       LIFEMART_PASSWORD: ${{ secrets.LIFEMART_PASSWORD }}
@@ -50,6 +55,7 @@ jobs:
           OPERATION: ${{ inputs.operation || 'deliver' }}
           BRANCH: ${{ inputs.branch || 'all' }}
           RETRY_BRANCH: ${{ inputs.retry_branch || 'none' }}
+          REPORT_DELIVERY_TIME: ${{ inputs.delivery_time || 'immediate' }}
         run: xvfb-run -a python3 -m telegram_reports.retry --operation "$OPERATION" --branch "$BRANCH" --retry-branch "$RETRY_BRANCH"
       - name: Encrypted private review
         if: always() && inputs.review_public_key != ''

@@ -19,7 +19,7 @@ class CompletedMetricsGate(unittest.TestCase):
         self.assertIn('types: [completed]',workflow)
         self.assertNotIn('types: [requested]',workflow)
 
-    def execute_timer(self,first,last):
+    def execute_timer(self,first,last,minutes_to_delivery=-1):
         import tempfile,json,datetime as dt
         from pathlib import Path
         from unittest.mock import patch
@@ -27,13 +27,18 @@ class CompletedMetricsGate(unittest.TestCase):
         def event(conclusion):return {'action':'requested','workflow_run':{'id':17,'status':'completed','conclusion':conclusion}}
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'event.json';path.write_text(json.dumps({'action':'completed','workflow_run':{'id':17}}))
-            target=dt.datetime.now(timer.TZ)-dt.timedelta(seconds=1)
+            target=dt.datetime.now(timer.TZ)+dt.timedelta(minutes=minutes_to_delivery)
             with patch.dict('os.environ',{'GITHUB_ACTIONS':'true','GITHUB_EVENT_PATH':str(path),'GITHUB_REPOSITORY':'owner/repo'}),patch('sys.argv',['timer']),patch.object(timer,'canonical_event',side_effect=[event(first),event(last)]) as canonical,patch.object(timer,'due_time',return_value=target),patch.object(timer,'dispatch') as dispatch,patch.object(timer.time,'sleep') as sleep:
                 timer.main()
                 return canonical.call_count,dispatch.call_args_list,sleep.call_count
     def test_failed_parent_never_waits_or_dispatches(self):
         calls,dispatches,sleeps=self.execute_timer('failure','success')
         self.assertEqual((calls,dispatches,sleeps),(1,[],0))
+    def test_collection_is_released_before_nine_after_half_past_eight(self):
+        calls,dispatches,sleeps=self.execute_timer('success','success',minutes_to_delivery=20)
+        self.assertEqual(calls,2)
+        self.assertEqual([c.args for c in dispatches],[('deliver',)])
+        self.assertEqual(sleeps,0)
     def test_parent_is_checked_again_at_actual_dispatch_time(self):
         calls,dispatches,_=self.execute_timer('success','failure')
         self.assertEqual(calls,2);self.assertEqual(dispatches,[])
