@@ -240,6 +240,9 @@ class Sheet:
         raise Stop('Sheet selection not stable')
 
     def locate(self, supplier, arrival, retry=True):
+        try:
+            if dt.datetime.strptime(arrival,'%d.%m.%Y').strftime('%d.%m.%Y')!=arrival:raise ValueError()
+        except (TypeError,ValueError):raise Stop('Invalid card arrival date') from None
         self.refresh()  # A new week may have been inserted after the sheet opened.
         col = ro.supplier_column(supplier, self.headers)
         rows = [i for i, r in enumerate(self.rows) if len(r) > 1 and r[1] == arrival]

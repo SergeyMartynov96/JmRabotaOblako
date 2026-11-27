@@ -5,6 +5,10 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import cloud_production as m
 
 class FactsSheetRefresh(unittest.TestCase):
+    def test_invalid_arrival_is_not_logged_or_used_for_a_sheet_read(self):
+        sheet=m.Sheet.__new__(m.Sheet);sheet.refresh=MagicMock()
+        with self.assertRaisesRegex(m.Stop,'^Invalid card arrival date$'):sheet.locate('supplier','private-payload')
+        sheet.refresh.assert_not_called()
     def test_locate_refreshes_rows_before_matching_arrival(self):
         sheet=m.Sheet.__new__(m.Sheet)
         sheet.rows=[['','28.11.2026','old']];sheet.headers=['','Дата','supplier']
