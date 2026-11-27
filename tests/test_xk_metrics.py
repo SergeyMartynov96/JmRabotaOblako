@@ -8,6 +8,48 @@ from xk_metrics.sources import read_tops
 from daily_metrics.core import StructureError
 
 class SeparateStoreMetrics(unittest.TestCase):
+    def test_revenue_browser_transport_keeps_the_exact_two_store_daily_request_and_cache(self):
+        import urllib.parse
+        from unittest.mock import MagicMock
+        from xk_metrics.sources import Client
+        from daily_metrics.io import SU,REVENUE
+        client=Client();client._authenticated=True;client.report_context=MagicMock()
+        response=client.report_context.request.post.return_value
+        response.status=200;response.url=SU+REVENUE;response.text.return_value='complete-report'
+        day=dt.date(2026,11,26)
+        self.assertEqual(client.revenue(STORES['Х76'].branch,day),'complete-report')
+        self.assertEqual(client.revenue(STORES['К44'].branch,day),'complete-report')
+        client.report_context.request.post.assert_called_once()
+        call=client.report_context.request.post.call_args
+        self.assertEqual(call.args[0],SU+REVENUE)
+        fields=urllib.parse.parse_qs(call.kwargs['data'])
+        self.assertEqual(fields['department[]'],['140','401'])
+        self.assertEqual(fields['date_s'],['26.11.2026']);self.assertEqual(fields['date_do'],['26.11.2026'])
+        self.assertLessEqual(call.kwargs['timeout'],600000)
+        self.assertGreater(call.kwargs['timeout'],599000)
+
+    def test_revenue_browser_transport_never_retries_forbidden_or_foreign_redirect(self):
+        from unittest.mock import MagicMock
+        from xk_metrics.sources import Client
+        for status,url in [(403,'https://su.lifemart.ru/receipts/receiptsGeneral/ajax_report'),(200,'https://example.com/report')]:
+            client=Client();client._authenticated=True;client.report_context=MagicMock()
+            response=client.report_context.request.post.return_value;response.status=status;response.url=url
+            with self.assertRaises(StructureError):client.revenue(STORES['Х76'].branch,dt.date(2026,11,26))
+            self.assertEqual(client.report_context.request.post.call_count,1)
+
+    def test_revenue_transport_retries_are_bounded(self):
+        from unittest.mock import MagicMock
+        from xk_metrics.sources import Client
+        client=Client();client._authenticated=True;client.report_context=MagicMock()
+        client.report_context.request.post.side_effect=TimeoutError()
+        with self.assertRaises(ConnectionError):client.revenue(STORES['Х76'].branch,dt.date(2026,11,26))
+        self.assertEqual(client.report_context.request.post.call_count,2)
+
+    def test_revenue_requires_a_verified_browser_context(self):
+        from xk_metrics.sources import Client
+        client=Client();client._authenticated=True
+        with self.assertRaisesRegex(StructureError,'Verified browser'):client.revenue(STORES['Х76'].branch,dt.date(2026,11,26))
+
     def test_invoices_use_the_verified_report_transport_and_same_suppliers(self):
         from types import SimpleNamespace
         from unittest.mock import MagicMock

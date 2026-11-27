@@ -1,21 +1,62 @@
 """Read only exact stores/dates; no changes to the existing three-store adapters."""
 import dataclasses
+import time
 import urllib.parse
+import urllib.error
 from decimal import Decimal
 from daily_metrics.session import ReportSUReports
-from daily_metrics.io import REVENUE,csv_sheet
+from daily_metrics.io import SU,REVENUE,csv_sheet
 from daily_metrics.core import Report,StructureError,DASH,value,date_matches,number,text
 from daily_metrics.extended_io import ExtraSources,CHARTS
 from daily_metrics.extended_core import daily_query,bi_percent,bi_rows,key,percentage_points
 
 class Client(ReportSUReports):
+    def adopt_browser_session(self,context,*,verified=False):
+        super().adopt_browser_session(context,verified=verified)
+        self.report_context=context
+
     def revenue(self,branch,day):
         if day not in self.revenue_cache:
             self.ensure_authenticated()
-            self.revenue_cache[day]=self.request(REVENUE,{'department[]':['140','401'],
+            params={'department[]':['140','401'],
                 'brandId':'','format':'1','date_s':day.strftime('%d.%m.%Y'),
-                'date_do':day.strftime('%d.%m.%Y'),'day_of_week[]':['all'],'night':'2'})
+                'date_do':day.strftime('%d.%m.%Y'),'day_of_week[]':['all'],'night':'2'}
+            self.revenue_cache[day]=self.browser_revenue(params)
         return self.revenue_cache[day]
+
+    def browser_revenue(self,params):
+        expected={'department[]','brandId','format','date_s','date_do','day_of_week[]','night'}
+        if set(params)!=expected or params['department[]']!=['140','401'] or params['date_s']!=params['date_do']:
+            raise StructureError('Revenue request left the approved store/day scope')
+        context=getattr(self,'report_context',None)
+        if context is None:raise StructureError('Verified browser session required for revenue')
+        deadline=time.monotonic()+660
+        print('SU: reading revenue through the verified browser session',flush=True)
+        for attempt in range(2):
+            remaining=deadline-time.monotonic()
+            if remaining<=0:raise ConnectionError('Revenue report deadline exhausted')
+            try:
+                response=context.request.post(SU+REVENUE,
+                    data=urllib.parse.urlencode(params,doseq=True),
+                    headers={'Content-Type':'application/x-www-form-urlencoded'},
+                    timeout=max(1,int(min(600,remaining)*1000)))
+                if response.status in (429,500,502,503,504):raise ConnectionError('Temporary revenue server response')
+                if response.status!=200:raise StructureError('Revenue report HTTP '+str(response.status))
+                observed=urllib.parse.urlsplit(response.url)
+                if (observed.scheme,observed.netloc,observed.path)!=('https','su.lifemart.ru',REVENUE):
+                    raise StructureError('Revenue response left the approved report endpoint')
+                html=response.text()
+                if 'LoginForm[password]' in html:raise StructureError('Revenue session expired')
+                return html
+            except Exception as exc:
+                message=str(exc).casefold()
+                transient=isinstance(exc,(TimeoutError,ConnectionError)) or (
+                    type(exc).__module__.startswith('playwright.') and
+                    (type(exc).__name__=='TimeoutError' or any(code in message for code in (
+                        'etimedout','econnreset','enotfound','socket hang up','connection reset','connection closed'))))
+                if not transient:raise
+                if attempt:raise ConnectionError('Revenue report transport unavailable') from None
+                print('SU: retrying revenue within the original generation budget',flush=True)
 
 
 def resolve_branch(client,store,day):
