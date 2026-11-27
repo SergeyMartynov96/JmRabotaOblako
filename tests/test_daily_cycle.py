@@ -56,3 +56,7 @@ class Cycle(unittest.TestCase):
         with patch.dict(os.environ,{'GITHUB_ACTIONS':'true','GITHUB_RUN_ID':'99','GITHUB_REPOSITORY':'a/b'}),patch('sys.argv',['run','--stage','suppliers']),patch.object(run,'api',side_effect=[own,{'workflow_runs':[]}]),patch.object(run,'valid_day',return_value=dt.date(2026,11,27)),patch.object(run,'child',return_value={'conclusion':'success'}),patch.object(run,'notify',side_effect=BotError('unknown')) as notify:
             with self.assertRaises(BotError):run.main()
             self.assertEqual(notify.call_count,1)
+    def test_failure_location_never_forwards_raw_details(self):
+        import json
+        log='prefix '+json.dumps({'errors':['АВ12: reasons source failed (TimeoutError) secret=123','М42: uv source failed (ConnectionError) 345.67','unknown user money=8877']},ensure_ascii=False)
+        self.assertEqual(run.failure_location(log),'АВ12 — причины списаний; М42 — упущенная выручка')

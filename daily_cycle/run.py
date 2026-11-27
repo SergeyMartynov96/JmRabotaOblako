@@ -72,6 +72,26 @@ def morning_dependency(day):
     raise RuntimeError('Morning tables were not confirmed before report deadline')
 
 
+
+def failure_location(log):
+    """Extract only approved shop/metric labels, never source values or raw errors."""
+    labels={'revenue':'выручка','writeoff':'списания','uv':'упущенная выручка','osa':'OSA','invoices':'приходные накладные','reasons':'причины списаний','procurement':'закуп факт'}
+    result=[]
+    for line in log.splitlines():
+        try:item=json.loads(line[line.index('{'):])
+        except (ValueError,TypeError):continue
+        if not isinstance(item,dict):continue
+        for error in item.get('errors',[]) if isinstance(item.get('errors'),list) else []:
+            if not isinstance(error,str):continue
+            for branch in ('АВ12','М42','Г34','Х76','К44'):
+                if error.startswith(branch+': '):
+                    for key,label in labels.items():
+                        if re.search(r'\b'+key+r' (?:source|destination)',error):
+                            value=branch+' — '+label
+                            if value not in result:result.append(value)
+    return '; '.join(result)
+
+
 def notify(text,stage,day):
     receipt=Path('cycle-receipt.json')
     receipt.write_text(json.dumps({'day':str(day),'stage':stage,'status':'attempted'}))
@@ -101,7 +121,10 @@ def main():
             if run['conclusion']!='success':
                 import subprocess
                 result=subprocess.run(['gh','run','view',str(run['id']),'--repo',os.environ['GITHUB_REPOSITORY'],'--log-failed'],capture_output=True,text=True,timeout=60)
-                _,reason=diagnose(result.stdout[-500000:] if result.returncode==0 else '',run['conclusion'])
+                log=result.stdout[-500000:] if result.returncode==0 else ''
+                _,reason=diagnose(log,run['conclusion'])
+                location=failure_location(log)
+                if location:reason='Показатели: '+location+'\n'+reason
                 failure=reason+'\nЗапуск: '+run['html_url'];break
             done.append(label)
     except Exception as exc:
