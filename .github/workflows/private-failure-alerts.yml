@@ -1,0 +1,43 @@
+name: LifeMart private failure alerts
+on:
+  workflow_run:
+    workflows: ["LifeMart K44 daily facts", "LifeMart AV12 facts", "LifeMart cloud read-only test", "LifeMart X76 daily facts", "LifeMart daily metrics", "LifeMart К44 morning metrics 07:00", "LifeMart additional sources check", "Read-only procurement date window check", "Repair failed writeoff placeholders", "Prevent plaintext secrets", "LifeMart secret configuration audit", "Telegram connection check", "Telegram private connection", "Telegram report schema inspection", "Telegram native report preview", "LifeMart Telegram 09:00 timer", "LifeMart private Telegram reports", "LifeMart Х76 morning metrics 07:00"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      parent_run:
+        description: Existing failed run to explain in the private chat
+        required: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: lifemart-private-failure-alerts
+  cancel-in-progress: false
+jobs:
+  notify:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'timed_out'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: main
+          persist-credentials: false
+      - run: python3 -m pip install cryptography==50.0.0
+      - name: Send private Russian explanation
+        id: alert
+        env:
+          PARENT_RUN: ${{ inputs.parent_run }}
+        run: python3 -m workflow_alerts.run
+      - name: Preserve incident receipt without private contents
+        if: always() && steps.alert.outputs.receipt != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.alert.outputs.receipt }}
+          path: /tmp/lifemart-alert.json
+          retention-days: 7
