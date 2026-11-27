@@ -174,6 +174,9 @@ def main():
     if os.getenv('GITHUB_ACTIONS')!='true':raise RuntimeError('Actions only')
     stage=args.stage;own=api('/actions/runs/'+os.environ['GITHUB_RUN_ID']);day=valid_day(own['created_at'],dt.datetime.now(TZ),stage)
     if args.verify:
+        if stage=='reports':
+            report_preflight(day)
+            report_delivery_confirmed(day)
         print(json.dumps({'stage':stage,'children':[x[0] for x in STEPS[stage]],'messages_sent':0,'writes':0}));return
     # One completed cycle per business stage/day. A failed cycle can be manually resumed.
     if completed_cycle(day,stage):

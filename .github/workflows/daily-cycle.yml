@@ -12,6 +12,7 @@ on:
         options: [morning, reports, suppliers]
         required: true
       operation:
+        description: Verify sends nothing; reports verification checks five actual delivery receipts
         type: choice
         options: [verify, run]
         default: verify
