@@ -7,7 +7,7 @@ on:
     inputs:
       operation:
         type: choice
-        options: [preview, apply]
+        options: [preview, apply, verify]
         default: preview
 permissions:
   contents: read

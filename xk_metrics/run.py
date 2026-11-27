@@ -3,8 +3,8 @@ import argparse,datetime as dt,json,os,shutil,dataclasses
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 from playwright.sync_api import sync_playwright
-from daily_metrics.core import StructureError,DASH,a1,value,money,number,revenue_report,writeoff_report,date_matches
-from daily_metrics.io import RevenueSheet,csv_sheet
+from daily_metrics.core import StructureError,DASH,a1,value,money,number,revenue_report,writeoff_report,date_matches,same_cell_value
+from daily_metrics.io import RevenueSheet,csv_sheet,native_cell
 from daily_metrics.run import check_date
 from daily_metrics.extended_core import percent_literal,key
 from .config import STORES
@@ -98,6 +98,14 @@ def execute(store,operation):
                 if operation=='apply':
                     if sheet.put_blank(cell,literal):written+=1
                     else:preserved+=1
+            if operation=='verify':
+                rows=sheet.refresh();daily_row,header=locate(sheet,rows,store,day)
+                for (r,c),literal in changes:
+                    if r not in (daily_row,header+12+day.weekday()):continue
+                    _,saved=native_cell(branch.book,branch.revenue_gid,a1(r,c))
+                    if saved is None or not same_cell_value(str(saved),literal):
+                        raise StructureError('Stored daily metric differs from source ('+a1(r,c)+')')
+                print(json.dumps({'branch':branch.name,'yesterday_saved_values_match_sources':True}),flush=True)
             print(json.dumps({'branch':branch.name,'date':str(day),'operation':operation,'written':written,'preserved':preserved,'errors':[]}),flush=True)
         finally:
             if sheet is not None:sheet.page.close()
@@ -105,11 +113,12 @@ def execute(store,operation):
 
 
 def main(store_name):
-    parser=argparse.ArgumentParser();parser.add_argument('--operation',choices=['preview','apply'],default='preview');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--operation',choices=['preview','apply','verify'],default='preview');args=parser.parse_args()
     # One bounded fresh session retry for transport errors only; existing cells stay intact.
     import urllib.error
     for attempt in range(2):
         try:execute(STORES[store_name],args.operation);return
-        except (TimeoutError,ConnectionError,urllib.error.URLError):
+        except (TimeoutError,ConnectionError,urllib.error.URLError) as exc:
+            if isinstance(exc,urllib.error.HTTPError) and exc.code not in (429,500,502,503,504):raise
             if attempt:raise
             print('Transient source failure; retrying this store in a fresh session',flush=True)
