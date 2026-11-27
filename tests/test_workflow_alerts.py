@@ -2,6 +2,11 @@ import unittest
 from workflow_alerts.run import canonical,diagnose
 
 class PrivateFailureAlerts(unittest.TestCase):
+    def test_missing_arrival_includes_only_validated_date(self):
+        self.assertIn('29.11.2026',diagnose('FAIL: Sheet arrival date missing: 29.11.2026','failure')[1])
+        self.assertNotIn('99.99.9999',diagnose('FAIL: Sheet arrival date missing: 99.99.9999','failure')[1])
+    def test_test_failure_is_not_mistaken_for_operational_date_error(self):
+        self.assertEqual(diagnose('Sheet arrival date missing\nFAILED (failures=1)','failure')[0],'code')
     def test_only_owned_main_failures_are_watched(self):
         run={'path':'.github/workflows/cloud-k44.yml','head_branch':'main','head_repository':{'full_name':'owner/repo'},'event':'workflow_dispatch','conclusion':'failure'}
         self.assertTrue(canonical(run,'owner/repo'))

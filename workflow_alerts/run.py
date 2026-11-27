@@ -26,13 +26,18 @@ NAMES={
 }
 
 def diagnose(log,conclusion):
+    if any(x in log for x in ('ModuleNotFoundError:','ImportError:','FAILED (failures=','FAILED (errors=')):
+        return 'code','Не прошла проверка кода или зависимостей. Основная обработка могла не начаться.'
     if 'Sheet arrival date missing' in log:
-        return 'arrival','В таблице не найдена дата привоза. Нужно проверить, что подготовлены строки нужной недели.'
+        match=re.search(r'Sheet arrival date missing: (\d{2}\.\d{2}\.\d{4})',log)
+        date=''
+        if match:
+            try:date=' '+dt.datetime.strptime(match[1],'%d.%m.%Y').strftime('%d.%m.%Y')
+            except ValueError:pass
+        return 'arrival','В таблице не найдена дата привоза'+date+'. Нужно проверить, что подготовлены строки нужной недели.'
     if any(x in log for x in ('Sheet date changed','Sheet header changed','Concurrent sheet change','Sheet selection not stable')):
         return 'sheet','Не удалось надёжно подтвердить дату или ячейку таблицы. Запись остановлена, чтобы не попасть в чужую строку.'
     if 'Summary metrics not ready:' in log:return 'incomplete','Не заполнены обязательные показатели таблицы. Неполный отчёт не отправлен.'
-    if any(x in log for x in ('ModuleNotFoundError:','ImportError:','FAILED (failures=','FAILED (errors=')):
-        return 'code','Не прошла проверка кода или зависимостей. Основная обработка могла не начаться.'
     if any(x in log for x in ('TimeoutError:','FAIL: TimeoutError','report_failed": true, "error": "ConnectionError','ETIMEDOUT','transport unavailable','transport deadline exhausted')) or conclusion=='timed_out':
         return 'timeout','Источник данных или страница не ответили вовремя. Нужна повторная проверка доступа и незавершённого переноса.'
     if any(x in log for x in ('SU login failed','SU browser login failed','HTTP 403','HTTP Error 403')):
