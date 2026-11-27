@@ -60,16 +60,14 @@ def child(file,inputs,tag,day):
 
 def completed_cycle(day,stage):
     name=f'daily-cycle-complete-{day}-{stage}'
-    for page in range(1,6):
-        artifacts=api(f'/actions/artifacts?per_page=100&page={page}')['artifacts']
-        for artifact in artifacts:
-            if artifact['name']!=name or artifact.get('expired'):continue
-            run=api('/actions/runs/'+str(artifact['workflow_run']['id']))
-            if (run.get('status')=='completed' and run.get('conclusion')=='success'
-                and run.get('path')=='.github/workflows/daily-cycle.yml' and run.get('head_branch')=='main'
-                and run.get('display_title')=='LifeMart cycle '+stage
-                and dt.datetime.fromisoformat(run['created_at'].replace('Z','+00:00')).astimezone(TZ).date()==day):return True
-        if len(artifacts)<100:break
+    artifacts=api('/actions/artifacts?per_page=100&name='+name)['artifacts']
+    for artifact in artifacts:
+        if artifact['name']!=name or artifact.get('expired'):continue
+        run=api('/actions/runs/'+str(artifact['workflow_run']['id']))
+        if (run.get('status')=='completed' and run.get('conclusion')=='success'
+            and run.get('path')=='.github/workflows/daily-cycle.yml' and run.get('head_branch')=='main'
+            and run.get('display_title')=='LifeMart cycle '+stage
+            and dt.datetime.fromisoformat(run['created_at'].replace('Z','+00:00')).astimezone(TZ).date()==day):return True
     return False
 
 
@@ -87,14 +85,22 @@ def morning_dependency(day):
     raise RuntimeError('Morning tables were not confirmed before report deadline')
 
 
+class PreparationError(RuntimeError):
+    def __init__(self,branch):self.branch=branch
+
+
 def report_preflight(day):
     from daily_metrics.config import BRANCHES
     from telegram_reports.sheets import preflight_week
     from xk_metrics.config import STORES
     from xk_reports.sheets import preflight
     yesterday=day-dt.timedelta(days=1)
-    for branch in BRANCHES:preflight_week(branch,yesterday)
-    for store in STORES.values():preflight(store,yesterday)
+    for branch in BRANCHES:
+        try:preflight_week(branch,yesterday)
+        except Exception:raise PreparationError(branch.name) from None
+    for store in STORES.values():
+        try:preflight(store,yesterday)
+        except Exception:raise PreparationError(store.branch.name) from None
 
 
 
@@ -119,9 +125,9 @@ def failure_location(log):
 
 def notify(text,stage,day):
     receipt=Path('cycle-receipt.json')
-    receipt.write_text(json.dumps({'day':str(day),'stage':stage,'status':'attempted'}))
     bot=BotClient(os.environ.get('TELEGRAM_BOT_TOKEN',''));me=bot.identity()
     recipient=decrypt_recipient(bot._token,me['id'],json.loads(BINDING.read_text()))
+    receipt.write_text(json.dumps({'day':str(day),'stage':stage,'status':'attempted'}))
     message=bot.api('sendMessage',{'chat_id':recipient,'text':text,'disable_web_page_preview':True})
     if message.get('chat',{}).get('id')!=recipient or message.get('chat',{}).get('type')!='private' or not message.get('message_id'):raise BotError('Cycle status delivery not confirmed')
     receipt.write_text(json.dumps({'day':str(day),'stage':stage,'status':'accepted'}))
@@ -157,6 +163,9 @@ def main():
         # Static text only, never forward exception text or private source logs.
         failure={'Morning tables were not completed successfully':'Утреннее заполнение завершилось ошибкой. Отправка отчётов остановлена.',
                  'Morning tables were not confirmed before report deadline':'Нет подтверждения заполнения всех таблиц. Отправка отчётов остановлена.'}.get(str(exc),'Не удалось подтвердить завершение этапа ('+type(exc).__name__+'). Требуется проверка запуска.')
+        if isinstance(exc,PreparationError):
+            current=exc.branch+' — готовность общей таблицы'
+            failure='Не удалось подтвердить дату или обязательные показатели таблицы. Отправка всех отчётов остановлена до проверки.'
     if failure is None:
         notify('✅ LifeMart: всё выполнено\n'+LABELS[stage]+'\n'+('Таблицы заполнены и проверены.' if stage=='morning' else 'Отчёты отправлены.' if stage=='reports' else 'Цифры поставщиков перенесены и проверены.'),stage,day)
         Path('cycle-complete.json').write_text(json.dumps({'day':str(day),'stage':stage,'status':'complete','run':own['id']}))

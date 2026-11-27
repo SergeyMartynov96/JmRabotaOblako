@@ -19,7 +19,7 @@ permissions:
   contents: read
   actions: write
 concurrency:
-  group: lifemart-cycle-${{ inputs.stage || (github.event.schedule == '0 2 * * *' && 'morning' || github.event.schedule == '0 3 * * *' && 'reports' || 'suppliers') }}
+  group: lifemart-cycle-${{ inputs.stage || (github.event.schedule == '0 2 * * *' && 'morning' || github.event.schedule == '0 3 * * *' && 'reports' || 'suppliers') }}${{ inputs.operation == 'verify' && '-verify' || '' }}
   cancel-in-progress: false
 jobs:
   cycle:

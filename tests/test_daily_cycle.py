@@ -72,3 +72,8 @@ class Cycle(unittest.TestCase):
             run.report_preflight(dt.date(2026,11,27))
             self.assertEqual(original.call_count,3);self.assertEqual(added.call_count,2)
             for c in original.call_args_list+added.call_args_list:self.assertEqual(c.args[1],dt.date(2026,11,26))
+    def test_readiness_failure_identifies_shop_without_raw_error(self):
+        with patch('telegram_reports.sheets.preflight_week',side_effect=ValueError('private body 12345')):
+            with self.assertRaises(run.PreparationError) as error:run.report_preflight(dt.date(2026,11,27))
+            self.assertEqual(error.exception.branch,'АВ12')
+            self.assertNotIn('private',str(error.exception))
