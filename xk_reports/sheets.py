@@ -19,13 +19,13 @@ def preflight(store,day):
     return header,lower
 
 
-def export_bounds(store,header,lower):
-    return {'r1':header-1,'r2':lower+9,'c1':store.offset+1,'c2':store.offset+25}
+def export_bounds(store,header,lower,column_count=50):
+    return {'r1':header-1,'r2':lower+9,'c1':store.offset+1,'c2':min(store.offset+25,column_count)}
 
 
 def capture(context,store,day,destination):
     header,lower=preflight(store,day)
-    params={'format':'pdf','gid':store.branch.revenue_gid,**export_bounds(store,header,lower),
+    params={'format':'pdf','gid':store.branch.revenue_gid,**export_bounds(store,header,lower,max(map(len,csv_sheet(store.branch.book,store.branch.revenue_gid)))),
         'size':'A3','portrait':'false','scale':'4','gridlines':'true','sheetnames':'false','printtitle':'false',
         'pagenum':'UNDEFINED','top_margin':0.15,'bottom_margin':0.15,'left_margin':0.15,'right_margin':0.15}
     url=f'https://docs.google.com/spreadsheets/d/{store.branch.book}/export?'+urllib.parse.urlencode(params)

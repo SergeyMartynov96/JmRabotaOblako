@@ -21,7 +21,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: lifemart-daily-metrics
+  group: ${{ inputs.cycle_id != '' && 'lifemart-daily-metrics' || format('lifemart-legacy-{0}', github.run_id) }}
   cancel-in-progress: false
 jobs:
   metrics:

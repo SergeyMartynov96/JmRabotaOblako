@@ -39,3 +39,20 @@ class Cycle(unittest.TestCase):
         workflow=(root/'daily-cycle.yml').read_text()
         for cron in ['0 2 * * *','0 3 * * *','0 11 * * *']:self.assertIn("cron: '"+cron+"'",workflow)
         self.assertNotIn('  workflow_run:',(root/'telegram-report-timer.yml').read_text())
+    def test_failed_child_stops_next_child_and_reports_once(self):
+        import os
+        own={'id':99,'created_at':'2026-11-27T11:00:00Z'}
+        failed={'id':2,'conclusion':'failure','html_url':'https://github.com/a/b/actions/runs/2'}
+        now=dt.datetime(2026,11,27,17,tzinfo=dt.timezone.utc)
+        with patch.dict(os.environ,{'GITHUB_ACTIONS':'true','GITHUB_RUN_ID':'99','GITHUB_REPOSITORY':'a/b'}),patch('sys.argv',['run','--stage','suppliers']),patch.object(run,'api',side_effect=[own,{'workflow_runs':[]}]),patch.object(run,'valid_day',return_value=dt.date(2026,11,27)),patch.object(run,'child',return_value=failed) as child,patch.object(run,'notify') as notify,patch('subprocess.run') as logs:
+            logs.return_value.returncode=1
+            with self.assertRaises(SystemExit):run.main()
+            self.assertEqual(child.call_count,1);self.assertEqual(notify.call_count,1)
+            self.assertIn('Остановились: АВ12',notify.call_args.args[0])
+    def test_uncertain_success_status_never_sends_second_message(self):
+        import os
+        from telegram_reports.transport import BotError
+        own={'id':99,'created_at':'2026-11-27T11:00:00Z'}
+        with patch.dict(os.environ,{'GITHUB_ACTIONS':'true','GITHUB_RUN_ID':'99','GITHUB_REPOSITORY':'a/b'}),patch('sys.argv',['run','--stage','suppliers']),patch.object(run,'api',side_effect=[own,{'workflow_runs':[]}]),patch.object(run,'valid_day',return_value=dt.date(2026,11,27)),patch.object(run,'child',return_value={'conclusion':'success'}),patch.object(run,'notify',side_effect=BotError('unknown')) as notify:
+            with self.assertRaises(BotError):run.main()
+            self.assertEqual(notify.call_count,1)
