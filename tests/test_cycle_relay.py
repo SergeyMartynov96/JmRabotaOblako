@@ -44,3 +44,12 @@ class Relay(unittest.TestCase):
         calls=self.execute(failed_post=True)
         self.assertEqual(len(calls),2)
         self.assertEqual(calls[-1].args[1]['inputs'],{'stage':'morning','operation':'run'})
+    def test_notice_after_missing_start_does_not_block_business_if_bot_fails(self):
+        import daily_cycle.run as cycle
+        with patch.object(cycle,'notify',side_effect=ConnectionError('uncertain')) as send:
+            relay.late_notice('morning',dt.datetime.now(relay.TZ).date()-dt.timedelta(days=1))
+            self.assertEqual(send.call_count,1)
+    def test_successful_external_dispatch_emits_recovery_notice(self):
+        with patch.object(relay,'late_notice') as notice:
+            calls=self.execute()
+            self.assertEqual(len(calls),2);self.assertEqual(notice.call_count,1)

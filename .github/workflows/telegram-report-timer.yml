@@ -25,6 +25,7 @@ jobs:
     timeout-minutes: 90
     env:
       GH_TOKEN: ${{ github.token }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -42,3 +43,10 @@ jobs:
           else
             python3 -m daily_cycle.relay
           fi
+      - name: Preserve recovery notice acknowledgement
+        if: always() && hashFiles('cycle-receipt.json') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cycle-recovery-notice-${{ github.run_id }}
+          path: cycle-receipt.json
+          retention-days: 14

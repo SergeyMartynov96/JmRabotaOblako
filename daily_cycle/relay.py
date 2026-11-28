@@ -28,6 +28,17 @@ def existing(stage,day):
     return any(r.get('display_title')=='LifeMart cycle '+stage and dt.datetime.fromisoformat(r['created_at'].replace('Z','+00:00')).astimezone(TZ).date()==day for r in rows)
 
 
+def late_notice(stage,day):
+    from .run import notify,LABELS
+    now=dt.datetime.now(TZ)
+    due=dt.datetime.combine(day,dt.time(HOURS[stage]),TZ)
+    if now<due+dt.timedelta(minutes=15):return
+    try:
+        notify('⚠️ LifeMart: задержка запуска\n'+LABELS[stage]+'\nПлановый общий запуск не появился. Внешний таймер запустил восстановление. Итог придёт после проверки данных.',stage,day)
+    except Exception as exc:
+        print(json.dumps({'recovery_notice_failed':True,'error_type':type(exc).__name__}),flush=True)
+
+
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--verify',action='store_true');args=parser.parse_args()
     if os.getenv('GITHUB_ACTIONS')!='true':raise RuntimeError('Actions only')
@@ -51,5 +62,6 @@ def main():
     # One POST only; an uncertain dispatch response is never blindly repeated.
     api('/actions/workflows/daily-cycle.yml/dispatches',{'ref':'main','inputs':{'stage':stage,'operation':'run'}})
     print(json.dumps({'relay_dispatch_accepted':True,'stage':stage,'source_run':int(ident)}),flush=True)
+    late_notice(stage,day)
 
 if __name__=='__main__':main()
