@@ -148,7 +148,9 @@ def compose(browser,panels,destination,columns=1,heading=None,width=1800):
 @bounded_bi_operation
 def query_from_renderer(bi,form):
     """Ask Superset's own chart plugin to build a missing saved query; block execution."""
-    page=active_page(bi);captured=[]
+    # Bootstrap is already complete; isolate plugin query requests from the
+    # dashboard's remaining asynchronous chart traffic.
+    page=bi.context.new_page();bi.report_page=page;page.bring_to_front();captured=[]
     deadline=time.monotonic()+180
     def intercept(route):
         if route.request.method=='POST':
