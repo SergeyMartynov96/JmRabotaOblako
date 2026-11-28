@@ -14,7 +14,7 @@ NAMES={
  'k44-morning-metrics.yml':'К44 — утреннее заполнение',
  'x76-morning-metrics.yml':'Х76 — утреннее заполнение',
  'telegram-reports.yml':'Отправка утренних отчётов в Telegram',
- 'telegram-report-timer.yml':'Запуск утренних отчётов',
+ 'telegram-report-timer.yml':'Резервный запуск общего этапа',
  'secret-guard.yml':'Проверка защиты секретов',
  'metrics-source-check.yml':'Проверка источников показателей',
  'cloud-readonly-test.yml':'Проверка чтения заявок',

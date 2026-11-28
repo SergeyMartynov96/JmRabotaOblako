@@ -1,38 +1,44 @@
-name: LifeMart Telegram 09:00 timer
+name: LifeMart daily cycle recovery relay
 on:
+  workflow_run:
+    workflows: [LifeMart daily metrics, LifeMart AV12 facts, LifeMart K44 daily facts, LifeMart X76 daily facts, LifeMart three daily cycles]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       operation:
         type: choice
-        options: [verify, arm_morning]
+        options: [verify, dispatch]
         default: verify
       parent_run:
-        description: Existing 08:00 parent run ID; arm_morning only
-        default: ''
+        description: Existing same-day external timer or completed morning run
+        required: true
 permissions:
   contents: read
   actions: write
 concurrency:
-  group: lifemart-telegram-morning-timer
+  group: lifemart-cycle-recovery-${{ github.event.workflow_run.id || github.run_id }}
   cancel-in-progress: false
 jobs:
-  timer:
+  relay:
     runs-on: ubuntu-24.04
-    timeout-minutes: 80
+    timeout-minutes: 90
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          ref: main
           persist-credentials: false
-      - name: Verify dispatch without reports
-        if: github.event_name == 'workflow_dispatch' && inputs.operation != 'arm_morning'
-        run: python3 -m telegram_reports.timer --verify
-      - name: Prepare from 08:30 for delivery from 09:00
-        if: github.event_name == 'workflow_run'
-        run: python3 -m telegram_reports.timer
-      - name: Restore today's morning timer from verified parent
-        if: github.event_name == 'workflow_dispatch' && inputs.operation == 'arm_morning'
+      - run: python3 -m pip install -r requirements-test.txt
+      - run: python3 -m unittest discover -s tests -q
+      - name: Recover common stage from verified source
         env:
           PARENT_RUN: ${{ inputs.parent_run }}
-        run: python3 -m telegram_reports.timer --arm-morning
+          VERIFY: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'verify' }}
+        run: |
+          if [ "$VERIFY" = true ]; then
+            python3 -m daily_cycle.relay --verify
+          else
+            python3 -m daily_cycle.relay
+          fi

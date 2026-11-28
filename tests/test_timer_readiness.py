@@ -16,7 +16,7 @@ class CompletedMetricsGate(unittest.TestCase):
     def test_automatic_timer_is_triggered_by_completion_not_request(self):
         from pathlib import Path
         workflow=Path('.github/workflows/telegram-report-timer.yml').read_text()
-        self.assertNotIn('  workflow_run:',workflow)
+        self.assertIn('types: [completed]',workflow)
         self.assertNotIn('types: [requested]',workflow)
 
     def execute_timer(self,first,last,minutes_to_delivery=-1):

@@ -38,7 +38,7 @@ class Cycle(unittest.TestCase):
             self.assertNotIn('  schedule:',(root/file).read_text())
         workflow=(root/'daily-cycle.yml').read_text()
         for cron in ['0 2 * * *','0 3 * * *','0 11 * * *']:self.assertIn("cron: '"+cron+"'",workflow)
-        self.assertNotIn('  workflow_run:',(root/'telegram-report-timer.yml').read_text())
+        self.assertIn('LifeMart three daily cycles',(root/'telegram-report-timer.yml').read_text())
     def test_failed_child_stops_next_child_and_reports_once(self):
         import os
         own={'id':99,'created_at':'2026-11-27T11:00:00Z'}
