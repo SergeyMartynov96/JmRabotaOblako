@@ -171,10 +171,23 @@ def notify(text,stage,day):
     print(json.dumps({'cycle_status_accepted':True,'stage':stage}),flush=True)
 
 
+def success_message(stage):
+    return {
+        'morning':'✅ Утреннее заполнение успешно\nТаблицы АВ12, М42, Г34, Х76 и К44 заполнены и проверены.',
+        'reports':'✅ Отправка отчётов успешна\nПодтверждена доставка отчётов АВ12, М42, Г34, Х76 и К44.',
+        'suppliers':'✅ Заполнение по поставщикам успешно\nВсе суммы поставщиков АВ12, К44 и Х76 перенесены и проверены.'
+    }[stage]
+
+
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--stage',choices=HOURS,required=True);parser.add_argument('--verify',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--stage',choices=HOURS,required=True);parser.add_argument('--verify',action='store_true');parser.add_argument('--status',action='store_true');args=parser.parse_args()
     if os.getenv('GITHUB_ACTIONS')!='true':raise RuntimeError('Actions only')
     stage=args.stage;own=api('/actions/runs/'+os.environ['GITHUB_RUN_ID']);day=valid_day(own['created_at'],dt.datetime.now(TZ),stage)
+    if args.status:
+        if not completed_cycle(day,stage):raise RuntimeError('Business stage is not confirmed complete')
+        if stage=='reports':report_delivery_confirmed(day)
+        notify(success_message(stage),stage,day)
+        return
     if args.verify:
         if stage=='reports':
             report_preflight(day)
@@ -213,7 +226,7 @@ def main():
             current=exc.branch+' — подтверждение доставки'
             failure='Нет подтверждённой квитанции Telegram для последней отправки этого магазина. Автоматический повтор отключён, чтобы не прислать дубли.'
     if failure is None:
-        notify('✅ LifeMart: всё выполнено\n'+LABELS[stage]+'\n'+('Таблицы заполнены и проверены.' if stage=='morning' else 'Отчёты отправлены.' if stage=='reports' else 'Цифры поставщиков перенесены и проверены.'),stage,day)
+        notify(success_message(stage),stage,day)
         Path('cycle-complete.json').write_text(json.dumps({'day':str(day),'stage':stage,'status':'complete','run':own['id']}))
         return
     notify('⚠️ LifeMart: запуск не завершён\n'+LABELS[stage]+'\nОстановились: '+current+'\nУспешно: '+(', '.join(done) or 'нет завершённых этапов')+'\n'+failure+'\nОбщий запуск: https://github.com/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/'+str(own['id']),stage,day)

@@ -98,3 +98,10 @@ class Cycle(unittest.TestCase):
             receipts.append({'status':'accepted','branch':branch.name,'day':'2026-11-26','images':images})
         with patch.object(run,'api',side_effect=responses),patch.object(run,'read_delivery_receipt',side_effect=receipts) as read:
             run.report_delivery_confirmed(dt.date(2026,11,27));self.assertEqual(read.call_count,5)
+    def test_success_messages_identify_every_scope(self):
+        for branch in ['АВ12','М42','Г34','Х76','К44']:self.assertIn(branch,run.success_message('morning'))
+        for branch in ['АВ12','К44','Х76']:self.assertIn(branch,run.success_message('suppliers'))
+    def test_status_resend_never_runs_business_children(self):
+        import os
+        with patch.dict(os.environ,{'GITHUB_ACTIONS':'true','GITHUB_RUN_ID':'99'}),patch('sys.argv',['run','--stage','morning','--status']),patch.object(run,'api',return_value={'created_at':'2026-11-28T02:00:00Z'}),patch.object(run,'valid_day',return_value=dt.date(2026,11,28)),patch.object(run,'completed_cycle',return_value=True),patch.object(run,'child') as child,patch.object(run,'notify') as notify:
+            run.main();child.assert_not_called();notify.assert_called_once()

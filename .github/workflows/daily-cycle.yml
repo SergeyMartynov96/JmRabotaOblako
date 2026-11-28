@@ -1,5 +1,5 @@
 name: LifeMart three daily cycles
-run-name: LifeMart cycle ${{ inputs.stage || (github.event.schedule == '0 2 * * *' && 'morning' || github.event.schedule == '0 3 * * *' && 'reports' || 'suppliers') }}${{ inputs.operation == 'verify' && ' (verify)' || '' }}
+run-name: LifeMart cycle ${{ inputs.stage || (github.event.schedule == '0 2 * * *' && 'morning' || github.event.schedule == '0 3 * * *' && 'reports' || 'suppliers') }}${{ inputs.operation == 'verify' && ' (verify)' || inputs.operation == 'status' && ' (status)' || '' }}
 on:
   # Daily timing is managed by cron-job.org in Asia/Yekaterinburg.
   workflow_dispatch:
@@ -15,7 +15,7 @@ on:
       operation:
         description: Verify sends nothing; reports verification checks five actual delivery receipts
         type: choice
-        options: [verify, run]
+        options: [verify, run, status]
         default: verify
 permissions:
   contents: read
@@ -43,9 +43,12 @@ jobs:
       - name: Coordinate business stage and send one private result
         env:
           STAGE: ${{ inputs.stage || (github.event.schedule == '0 2 * * *' && 'morning' || github.event.schedule == '0 3 * * *' && 'reports' || 'suppliers') }}
+          STATUS: ${{ inputs.operation == 'status' }}
           VERIFY: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'verify' }}
         run: |
-          if [ "$VERIFY" = true ]; then
+          if [ "$STATUS" = true ]; then
+            python3 -m daily_cycle.run --stage "$STAGE" --status
+          elif [ "$VERIFY" = true ]; then
             python3 -m daily_cycle.run --stage "$STAGE" --verify
           else
             python3 -m daily_cycle.run --stage "$STAGE"
