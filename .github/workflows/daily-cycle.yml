@@ -1,10 +1,7 @@
 name: LifeMart three daily cycles
 run-name: LifeMart cycle ${{ inputs.stage || (github.event.schedule == '0 2 * * *' && 'morning' || github.event.schedule == '0 3 * * *' && 'reports' || 'suppliers') }}${{ inputs.operation == 'verify' && ' (verify)' || '' }}
 on:
-  schedule:
-    - cron: '0 2 * * *' # 07:00 Екатеринбург
-    - cron: '0 3 * * *' # 08:00 Екатеринбург
-    - cron: '0 11 * * *' # 16:00 Екатеринбург
+  # Daily timing is managed by cron-job.org in Asia/Yekaterinburg.
   workflow_dispatch:
     inputs:
       stage:
