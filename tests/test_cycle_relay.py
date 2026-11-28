@@ -53,3 +53,12 @@ class Relay(unittest.TestCase):
         with patch.object(relay,'late_notice') as notice:
             calls=self.execute()
             self.assertEqual(len(calls),2);self.assertEqual(notice.call_count,1)
+    def test_changing_existing_timer_to_seven_needs_no_secret_or_endpoint_change(self):
+        source=self.source('daily-metrics.yml','LifeMart metrics apply (all)',hour=7)
+        self.assertEqual(relay.route(source,self.now(7),'owner/repo'),'morning')
+    def test_on_time_external_start_does_not_emit_late_warning(self):
+        import daily_cycle.run as cycle
+        with patch.object(relay.dt,'datetime',wraps=dt.datetime) as clock,patch.object(cycle,'notify') as notice:
+            clock.now.return_value=self.now(7)+dt.timedelta(minutes=1)
+            relay.late_notice('morning',self.now(7).date())
+            notice.assert_not_called()
