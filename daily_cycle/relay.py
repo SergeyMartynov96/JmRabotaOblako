@@ -34,7 +34,7 @@ def late_notice(stage,day):
     due=dt.datetime.combine(day,dt.time(HOURS[stage]),TZ)
     if now<due+dt.timedelta(minutes=15):return
     try:
-        notify('⚠️ LifeMart: задержка запуска\n'+LABELS[stage]+'\nПлановый общий запуск не появился. Внешний таймер запустил восстановление. Итог придёт после проверки данных.',stage,day)
+        notify('⚠️ LifeMart: задержка запуска\n'+LABELS[stage]+'\nПлановый общий запуск не появился. Внешний таймер отправил запрос на восстановление. Итог придёт после проверки данных.',stage,day)
     except Exception as exc:
         print(json.dumps({'recovery_notice_failed':True,'error_type':type(exc).__name__}),flush=True)
 

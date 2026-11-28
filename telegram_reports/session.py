@@ -14,4 +14,7 @@ def report_bi(browser,client):
         if isinstance(getattr(exc,'reason',None),ssl.SSLCertVerificationError):raise
         browser_login=True
         print('SU: HTTP login transport unavailable; using the normal active Chrome sign-in page',flush=True)
-    return BIReports(browser,client,browser_login=browser_login)
+    from .render import prepare_native_page
+    bi=BIReports(browser,client,browser_login=browser_login)
+    bi.prepare_authenticated_page=lambda page,deadline:prepare_native_page(bi,page,deadline)
+    return bi

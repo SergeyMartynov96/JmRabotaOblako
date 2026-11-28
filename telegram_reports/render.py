@@ -8,6 +8,17 @@ from .http import report_get
 from playwright.sync_api import TimeoutError as BrowserTimeout
 
 
+
+def prepare_native_page(bi,page,deadline):
+    """Finish the first active Superset load before any new page or invoice read."""
+    page.bring_to_front()
+    remaining=max(1,int((deadline-time.monotonic())*1000))
+    page.wait_for_function("""() => document.visibilityState==='visible' &&
+        document.readyState==='complete' && !!document.querySelector('svg path,svg rect,canvas,table td')""",timeout=remaining)
+    bi.report_page=page
+    print('{"native_dashboard_ready":true,"first_page_retained":true}',flush=True)
+
+
 @bounded_bi_operation
 def active_page(bi):
     page=getattr(bi,'report_page',None)

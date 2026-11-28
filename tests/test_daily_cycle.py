@@ -32,12 +32,13 @@ class Cycle(unittest.TestCase):
     def test_child_failure_not_duplicated_by_notifier(self):
         row={'path':'.github/workflows/daily-metrics.yml','head_branch':'main','head_repository':{'full_name':'a/b'},'event':'workflow_dispatch','conclusion':'failure','display_title':'metrics [cycle:123]'}
         self.assertFalse(canonical(row,'a/b'))
-    def test_only_coordinator_has_business_crons(self):
+    def test_external_scheduler_owns_daily_timing(self):
         root=Path('.github/workflows')
         for file in [x[0] for steps in run.STEPS.values() for x in steps]:
             self.assertNotIn('  schedule:',(root/file).read_text())
         workflow=(root/'daily-cycle.yml').read_text()
-        for cron in ['0 2 * * *','0 3 * * *','0 11 * * *']:self.assertIn("cron: '"+cron+"'",workflow)
+        self.assertNotIn('  schedule:',workflow)
+        self.assertIn('workflow_dispatch:',workflow)
         self.assertIn('LifeMart three daily cycles',(root/'telegram-report-timer.yml').read_text())
     def test_failed_child_stops_next_child_and_reports_once(self):
         import os

@@ -40,6 +40,8 @@ def checked_wait(day,seconds=20):
 
 
 def child(file,inputs,tag,day):
+    if file in ('telegram-reports.yml','xk-telegram-reports.yml') and os.getenv('REVIEW_PUBLIC_KEY'):
+        inputs={**inputs,'review_public_key':os.environ['REVIEW_PUBLIC_KEY']}
     api('/actions/workflows/'+file+'/dispatches',{'ref':'main','inputs':{**inputs,'cycle_id':tag}})
     deadline=time.monotonic()+180;ident=None
     while time.monotonic()<deadline:
@@ -138,7 +140,7 @@ def failure_location(log):
     """Extract only approved shop/metric labels, never source values or raw errors."""
     labels={'revenue':'выручка','writeoff':'списания','uv':'упущенная выручка','osa':'OSA','invoices':'приходные накладные','reasons':'причины списаний','procurement':'закуп факт'}
     result=[];last=''
-    sources={'ui2_days':'недельные списания','ui2':'списания УИ2','top_qty':'ТОП списаний, шт','top_rub':'ТОП списаний, руб','uv_dishes':'УВ по позициям'}
+    sources={'reasons':'причины списаний','ui2_days':'недельные списания','ui2':'списания УИ2','top_qty':'ТОП списаний, шт','top_rub':'ТОП списаний, руб','uv_dishes':'УВ по позициям'}
     assemblies={'weekly_sheet':'общая таблица','invoices':'приходные накладные','compose':'сборка изображений'}
     for line in log.splitlines():
         try:item=json.loads(line[line.index('{'):])

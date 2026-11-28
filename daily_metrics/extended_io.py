@@ -110,6 +110,8 @@ class BIReports:
                     return false;
                 }""",timeout=remaining)
                 self.csrf=token.json_value()
+                prepare=getattr(self,'prepare_authenticated_page',None)
+                if callable(prepare):prepare(page,started+180)
 
             except Exception:
                 try:
@@ -123,7 +125,8 @@ class BIReports:
                 except Exception:print('BI: authentication state unavailable',flush=True)
                 raise
             finally:
-                page.close();context.unroute('**/*',session_documents)
+                if getattr(self,'report_page',None) is not page:page.close()
+                context.unroute('**/*',session_documents)
             adopt=getattr(self.client,'adopt_browser_session',None)
             if callable(adopt):adopt(context,verified=bool(self.csrf))
             self.context=context

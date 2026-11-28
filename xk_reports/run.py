@@ -10,7 +10,7 @@ from xk_metrics.config import STORES
 from xk_metrics.sources import Client,Sources
 from telegram_reports.catalog import ReportCharts,CHARTS
 from telegram_reports.core import weekly_period
-from telegram_reports.render import capture_chart,compose,active_page
+from telegram_reports.render import capture_chart,compose,active_page,prepare_native_page
 from telegram_reports.security import seal_images,seal_tree,arm_failed_cleanup,auth_snapshot
 from telegram_reports.transport import BotClient,BotError,decrypt_recipient
 from telegram_reports.connect import BINDING
@@ -89,6 +89,7 @@ def main():
             with sync_playwright() as pw:
                 browser=pw.chromium.launch(headless=not bool(os.getenv('DISPLAY')),executable_path=shutil.which('google-chrome'))
                 sources=Sources(browser,Client());bi=sources.bi
+                bi.prepare_authenticated_page=lambda page,deadline:prepare_native_page(bi,page,deadline)
                 bi.seal_before_exit=lambda:seal_tree(root,public,'review.enc.json')
                 bi.auth_failure_snapshot=auth_snapshot(root,public)
                 try:
